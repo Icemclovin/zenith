@@ -1,7 +1,24 @@
 use std::process::{Command, Stdio};
 
+/// Zorgt dat de geselecteerde statusbalk geïnstalleerd is (via pkexec pacman indien nodig)
+pub fn ensure_bar_installed(bar: &str) {
+    let pkg = match bar {
+        "quickshell" => "quickshell",
+        "waybar" => "waybar",
+        _ => return,
+    };
+
+    if !is_command_available(bar) {
+        let _ = Command::new("pkexec")
+            .args(["pacman", "-S", "--noconfirm", pkg])
+            .spawn();
+    }
+}
+
 /// Beheert het wisselen tussen verschillende statusbalken (Waybar, Quickshell of Geen)
 pub fn set_active_bar(choice: &str) {
+    ensure_bar_installed(choice);
+
     // 1. Sluit actieve instanties af zonder ruis op stderr als ze niet draaien
     let _ = Command::new("killall")
         .args(["-q", "-9", "waybar"])
@@ -102,6 +119,16 @@ pub fn restart_dunst() {
 
 /// Hulpmiddel om te controleren of een binary in $PATH staat
 fn is_command_available(cmd: &str) -> bool {
+    // 1. Directe controle via de PATH-omgevingsvariabele (onafhankelijk van 'which' binary)
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let full_path = dir.join(cmd);
+            if full_path.is_file() {
+                return true;
+            }
+        }
+    }
+    // 2. Val terug op which binary indien aanwezig
     Command::new("which")
         .arg(cmd)
         .stdout(Stdio::null())
@@ -109,4 +136,27 @@ fn is_command_available(cmd: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Controleert of een procesnaam actief draait via pgrep
+pub fn is_process_running(proc_name: &str) -> bool {
+    Command::new("pgrep")
+        .arg("-x")
+        .arg(proc_name)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Voert een willekeurig shell-commando asynchroon uit
+pub fn execute_cmd(cmd_str: &str) {
+    let _ = Command::new("bash")
+        .arg("-c")
+        .arg(cmd_str)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
 }

@@ -1,0 +1,174 @@
+/* ========================================================
+   Zenith Control Center - Custom Hyprland Dark Theme
+   Minimalist, Arch & Hyprland Cyber Aesthetic
+   ======================================================== */
+
+window {
+    background-color: #0f0f17;
+    color: #cdd6f4;
+    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', 'Fira Code', 'Cantarell', sans-serif;
+}
+
+/* Linker Zijbalk */
+.zenith-sidebar {
+    background-color: #13131f;
+    border-right: 1px solid #232433;
+    padding: 16px 12px;
+}
+
+.zenith-brand-title {
+    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
+    font-weight: 800;
+    font-size: 18px;
+    color: #89b4fa;
+    letter-spacing: 0.5px;
+}
+
+.zenith-brand-sub {
+    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #6c7086;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+
+/* Status Pill Badge */
+.status-pill-active {
+    background-color: rgba(166, 227, 161, 0.12);
+    border: 1px solid rgba(166, 227, 161, 0.40);
+    color: #a6e3a1;
+    border-radius: 9999px;
+    padding: 3px 10px;
+    font-size: 10.5px;
+    font-weight: bold;
+    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
+}
+
+.status-pill-inactive {
+    background-color: rgba(243, 139, 168, 0.12);
+    border: 1px solid rgba(243, 139, 168, 0.40);
+    color: #f38ba8;
+    border-radius: 9999px;
+    padding: 3px 10px;
+    font-size: 10.5px;
+    font-weight: bold;
+    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
+}
+
+/* Navigatie Knoppen in de Zijbalk */
+.sidebar-list {
+    background: transparent;
+}
+
+.sidebar-list row {
+    background: transparent;
+    border-radius: 8px;
+    margin: 2px 0;
+    padding: 8px 12px;
+    transition: all 150ms cubic-bezier(0.25, 1, 0.5, 1);
+    color: #a6adc8;
+    font-weight: 500;
+    font-size: 13px;
+    border: 1px solid transparent;
+}
+
+.sidebar-list row:hover {
+    background-color: rgba(137, 180, 250, 0.08);
+    color: #cdd6f4;
+    border-color: rgba(137, 180, 250, 0.15);
+}
+
+.sidebar-list row:selected {
+    background-color: rgba(137, 180, 250, 0.16);
+    color: #89b4fa;
+    border: 1px solid rgba(137, 180, 250, 0.45);
+    box-shadow: 0 0 10px rgba(137, 180, 250, 0.15);
+    font-weight: 700;
+}
+
+/* Kaarten en Boxed Lists */
+.boxed-list, list.boxed-list {
+    background-color: #181825;
+    border: 1px solid #313244;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.boxed-list row {
+    border-bottom: 1px solid #232433;
+    padding: 10px 14px;
+}
+
+.boxed-list row:last-child {
+    border-bottom: none;
+}
+
+/* Sliders */
+scale trough {
+    background-color: #313244;
+    border-radius: 6px;
+    min-height: 6px;
+}
+
+scale highlight {
+    background-color: #89b4fa;
+    border-radius: 6px;
+}
+
+scale slider {
+    background-color: #cdd6f4;
+    border-radius: 50%;
+    min-width: 14px;
+    min-height: 14px;
+    box-shadow: 0 0 6px rgba(137, 180, 250, 0.4);
+}
+
+/* Knoppen */
+button.suggested-action {
+    background: linear-gradient(135deg, #89b4fa, #74c7ec);
+    color: #11111b;
+    font-weight: bold;
+    border-radius: 8px;
+    border: none;
+    box-shadow: 0 2px 8px rgba(137, 180, 250, 0.3);
+    transition: all 120ms ease-out;
+}
+
+button.suggested-action:hover {
+    box-shadow: 0 0 14px rgba(137, 180, 250, 0.55);
+}
+
+button.destructive-action {
+    background-color: rgba(243, 139, 168, 0.15);
+    color: #f38ba8;
+    border: 1px solid rgba(243, 139, 168, 0.35);
+    border-radius: 8px;
+}
+
+button.destructive-action:hover {
+    background-color: rgba(243, 139, 168, 0.28);
+    box-shadow: 0 0 10px rgba(243, 139, 168, 0.35);
+}
+
+/* Headerbar */
+headerbar {
+    background-color: #0f0f17;
+    border-bottom: 1px solid #232433;
+    color: #cdd6f4;
+}
+
+/* Zoek/Invoervelden */
+entry {
+    background-color: #181825;
+    border: 1px solid #313244;
+    color: #cdd6f4;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
+}
+
+entry:focus {
+    border-color: #89b4fa;
+    box-shadow: 0 0 8px rgba(137, 180, 250, 0.3);
+}

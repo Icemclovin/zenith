@@ -1,6 +1,8 @@
 pub mod bootstrap;
 pub mod config;
 pub mod hyprland;
+pub mod i18n;
+pub mod palette;
 pub mod process;
 pub mod shell_config;
 pub mod themes;

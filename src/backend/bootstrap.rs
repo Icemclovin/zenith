@@ -85,7 +85,11 @@ fn ensure_file_exists(path: &PathBuf, default_content: &str) {
 fn ensure_quickshell_config(home: &PathBuf) {
     let qs_dir = home.join(".config/quickshell");
     let modules_dir = qs_dir.join("modules");
+    let cards_dir = qs_dir.join("cards");
+    let panels_dir = qs_dir.join("panels");
     let _ = create_dir_all(&modules_dir);
+    let _ = create_dir_all(&cards_dir);
+    let _ = create_dir_all(&panels_dir);
 
     // 1. Garandeer zenith-shell.json
     let shell_json_path = qs_dir.join("zenith-shell.json");
@@ -125,6 +129,27 @@ fn ensure_quickshell_config(home: &PathBuf) {
     "brightness_osd": true,
     "notifications": true
   },
+  "control_center": {
+    "enabled": true,
+    "position": "top-right",
+    "width": 380,
+    "max_height": 600,
+    "border_radius": 16,
+    "blur_behind": true,
+    "opacity": 0.92,
+    "cards": ["wifi_toggle", "bluetooth_toggle", "dnd_toggle", "nightlight_toggle", "volume_slider", "mic_slider", "brightness_slider", "mpris_card", "battery_card", "power_strip"]
+  },
+  "osd": {
+    "enabled": true,
+    "position": "bottom",
+    "timeout_ms": 2000,
+    "width": 260,
+    "height": 48,
+    "orientation": "horizontal",
+    "show_percentage": true,
+    "show_icon": true,
+    "hardware_targets": ["volume", "mic", "brightness"]
+  },
   "custom": {
     "raw_override": false,
     "custom_qml_path": null
@@ -132,20 +157,27 @@ fn ensure_quickshell_config(home: &PathBuf) {
   "custom_scripts": []
 }"###;
         ensure_file_exists(&shell_json_path, default_shell_json);
+    } else {
+        // Valideer en vul ontbrekende velden aan in bestaande config
+        let shell_cfg = crate::backend::shell_config::ZenithShellConfig::load_or_default();
+        let _ = shell_cfg.save();
     }
 
     // 2. Garandeer modulaire shell.qml
     let shell_qml = qs_dir.join("shell.qml");
-    if !shell_qml.exists() {
-        let modular_shell_qml = r###"import QtQuick
+    let modular_shell_qml = r###"import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 import Quickshell.Hyprland
+import "panels" as Panels
 
-PanelWindow {
-    id: root
+Scope {
+    id: rootScope
+
+    PanelWindow {
+        id: root
 
     // Centrale configuratie inladen via FileView met watchChanges voor instant reactieve updates
     FileView {
@@ -227,6 +259,7 @@ PanelWindow {
     readonly property var modulesCfg: root.shellConfig.modules || {}
     readonly property var panelsCfg: root.shellConfig.panels || {}
     readonly property var customScripts: root.shellConfig.custom_scripts || []
+    readonly property var icons: root.shellConfig.custom_icons || {}
 
     // Oriëntatie: horizontaal (top/bottom) of verticaal (left/right)
     readonly property bool isVertical: root.layout.position === "left" || root.layout.position === "right"
@@ -450,14 +483,45 @@ PanelWindow {
                 }
             }
         }
+        }
+    }
+
+    // ==========================================
+    // 2. Control Center Paneel
+    // ==========================================
+    Panels.ControlCenter {
+        id: controlCenterPanel
+    }
+
+    // ==========================================
+    // 3. On-Screen Display (OSD)
+    // ==========================================
+    Panels.Osd {
+        id: osdPanel
     }
 }
 "###;
+    if shell_qml.exists() {
+        if let Ok(content) = read_to_string(&shell_qml) {
+            // Als het bestaande bestand verouderd is (mist ModuleLoader, FileView, Scope of Panels)
+            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") {
+                let backup = qs_dir.join("shell.qml.old");
+                let _ = std::fs::copy(&shell_qml, &backup);
+                let _ = std::fs::write(&shell_qml, modular_shell_qml);
+            }
+        }
+    } else {
         ensure_file_exists(&shell_qml, modular_shell_qml);
     }
 
     // 3. Garandeer standaard modules in ~/.config/quickshell/modules/
     ensure_default_modules(&modules_dir);
+
+    // 4. Garandeer Control Center & OSD panels in ~/.config/quickshell/panels/
+    ensure_panels(&panels_dir);
+
+    // 5. Garandeer dynamische kaarten in ~/.config/quickshell/cards/
+    ensure_default_cards(&cards_dir);
 }
 
 fn ensure_default_modules(dir: &PathBuf) {
@@ -476,21 +540,39 @@ RowLayout {
         model: Hyprland.workspaces
 
         Rectangle {
+            id: wsPill
             required property var modelData
-            width: 26; height: 22; radius: 6
-
             property bool isActive: (Hyprland.focusedMonitor && Hyprland.focusedMonitor.activeWorkspace)
                 ? modelData.id === Hyprland.focusedMonitor.activeWorkspace.id
                 : false
 
+            width: isActive ? 32 : (wsHover.containsMouse ? 28 : 24)
+            height: 22
+            radius: 6
+
             color: isActive
                 ? Qt.alpha(root.themeAccent || "#89b4fa", 0.30)
-                : Qt.alpha(root.fgColor || "#cdd6f4", 0.05)
+                : (wsHover.containsMouse ? Qt.alpha(root.fgColor || "#cdd6f4", 0.12) : Qt.alpha(root.fgColor || "#cdd6f4", 0.05))
 
             border.color: isActive
                 ? (root.themeAccent || "#89b4fa")
-                : (root.borderColor || "#45475a")
+                : (wsHover.containsMouse ? Qt.alpha(root.themeAccent || "#89b4fa", 0.5) : (root.borderColor || "#45475a"))
             border.width: 1
+
+            scale: wsHover.containsMouse ? 1.08 : 1.0
+
+            Behavior on width {
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+            }
+            Behavior on scale {
+                NumberAnimation { duration: 140; easing.type: Easing.OutBack; easing.overshoot: 1.2 }
+            }
+            Behavior on color {
+                ColorAnimation { duration: 140 }
+            }
+            Behavior on border.color {
+                ColorAnimation { duration: 140 }
+            }
 
             Text {
                 anchors.centerIn: parent
@@ -501,7 +583,9 @@ RowLayout {
             }
 
             MouseArea {
+                id: wsHover
                 anchors.fill: parent
+                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: Hyprland.dispatch("workspace " + modelData.id)
             }
@@ -1252,7 +1336,7 @@ Rectangle {
         }
     }
 
-    Process { id: qsLauncherProc; command: ["bash", "-c", "rofi -show drun || wofi --show drun"] }
+    Process { id: qsLauncherProc; command: ["bash", "-c", "quickshell ipc call controlCenter toggle 2>/dev/null || rofi -show drun || wofi --show drun"] }
 
     MouseArea {
         anchors.fill: parent
@@ -1261,6 +1345,1471 @@ Rectangle {
             qsLauncherProc.running = true;
         }
     }
+}
+"###,
+    );
+}
+
+
+fn ensure_panels(dir: &PathBuf) {
+    ensure_file_exists(
+        &dir.join("ControlCenter.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Wayland
+import Quickshell.Io
+
+Scope {
+    id: ccScope
+
+    FileView {
+        id: shellConfigFile
+        path: Quickshell.env("HOME") + "/.config/quickshell/zenith-shell.json"
+        watchChanges: true
+    }
+
+    readonly property var shellConfig: {
+        try {
+            var txt = shellConfigFile.text().trim();
+            if (txt.length > 0) return JSON.parse(txt);
+        } catch (e) {}
+        return {};
+    }
+
+    readonly property var ccConfig: ccScope.shellConfig.control_center || {}
+    readonly property var customScripts: ccScope.shellConfig.custom_scripts || []
+    readonly property bool isCcEnabled: ccScope.ccConfig.enabled !== undefined ? ccScope.ccConfig.enabled : true
+    readonly property int ccWidth: ccScope.ccConfig.width || 380
+    readonly property int ccMaxHeight: ccScope.ccConfig.max_height || 600
+    readonly property string ccPosition: ccScope.ccConfig.position || "top-right"
+    readonly property int ccRadius: ccScope.ccConfig.border_radius !== undefined ? ccScope.ccConfig.border_radius : 16
+    readonly property real ccOpacity: ccScope.ccConfig.opacity !== undefined ? ccScope.ccConfig.opacity : 0.92
+    readonly property color bgColor: (ccScope.shellConfig.styling && ccScope.shellConfig.styling.background) || "#1e1e2e"
+    readonly property color borderColor: (ccScope.shellConfig.styling && ccScope.shellConfig.styling.border_color) || "#45475a"
+    readonly property color textColor: (ccScope.shellConfig.styling && ccScope.shellConfig.styling.text_color) || "#cdd6f4"
+
+    property bool isCcActive: false
+
+    // Hyprland / Quickshell IPC Handler
+    IpcHandler {
+        target: "controlCenter"
+        function toggle() {
+            if (ccScope.isCcEnabled) {
+                ccScope.isCcActive = !ccScope.isCcActive;
+            }
+        }
+        function open() {
+            if (ccScope.isCcEnabled) ccScope.isCcActive = true;
+        }
+        function close() {
+            ccScope.isCcActive = false;
+        }
+    }
+
+    // Dismiss Overlay: klik buiten paneel sluit Control Center
+    PanelWindow {
+        id: dismissOverlay
+        visible: ccScope.isCcActive
+        color: "transparent"
+        anchors {
+            top: true
+            bottom: true
+            left: true
+            right: true
+        }
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: ccScope.isCcActive = false
+        }
+    }
+
+    // Hoofdvenster Control Center
+    PanelWindow {
+        id: ccWindow
+        visible: ccScope.isCcActive || mainBg.opacity > 0.01
+        color: "transparent"
+        implicitWidth: ccScope.ccWidth
+        implicitHeight: Math.min(contentCol.implicitHeight + 36, ccScope.ccMaxHeight)
+
+        anchors {
+            top: ccScope.ccPosition.indexOf("top") !== -1
+            bottom: ccScope.ccPosition.indexOf("bottom") !== -1
+            right: ccScope.ccPosition.indexOf("right") !== -1
+            left: ccScope.ccPosition.indexOf("left") !== -1
+        }
+        margins {
+            top: 48
+            bottom: 48
+            left: 16
+            right: 16
+        }
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+        Rectangle {
+            id: mainBg
+            anchors.fill: parent
+            radius: ccScope.ccRadius
+            color: Qt.alpha(ccScope.bgColor, ccScope.ccOpacity)
+            border.width: 1
+            border.color: ccScope.borderColor
+
+            opacity: ccScope.isCcActive ? 1.0 : 0.0
+            scale: ccScope.isCcActive ? 1.0 : 0.90
+            transformOrigin: {
+                if (ccScope.ccPosition === "top-right") return Item.TopRight;
+                if (ccScope.ccPosition === "top-left") return Item.TopLeft;
+                if (ccScope.ccPosition === "bottom-right") return Item.BottomRight;
+                if (ccScope.ccPosition === "bottom-left") return Item.BottomLeft;
+                return Item.Center;
+            }
+
+            Behavior on opacity {
+                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            }
+            Behavior on scale {
+                NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.18 }
+            }
+
+            Flickable {
+                id: flick
+                anchors.fill: parent
+                anchors.margins: 14
+                contentHeight: contentCol.implicitHeight
+                clip: true
+
+                ColumnLayout {
+                    id: contentCol
+                    width: flick.width
+                    spacing: 10
+
+                    // Header
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Control Center"
+                            font.bold: true
+                            font.pixelSize: 13
+                            color: ccScope.textColor
+                        }
+                        Item { Layout.fillWidth: true }
+                        Rectangle {
+                            width: 22
+                            height: 22
+                            radius: 11
+                            color: Qt.alpha(ccScope.textColor, 0.12)
+                            Text {
+                                anchors.centerIn: parent
+                                text: "✕"
+                                font.pixelSize: 10
+                                color: ccScope.textColor
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: ccScope.isCcActive = false
+                            }
+                        }
+                    }
+
+                    // Dynamische Repeater & Loader voor alle actieve kaarten
+                    Repeater {
+                        model: ccScope.ccConfig.cards || []
+                        Loader {
+                            id: cardLoader
+                            required property var modelData
+                            Layout.fillWidth: true
+                            source: {
+                                if (typeof modelData === "string" && modelData.indexOf("script:") === 0) {
+                                    return Quickshell.env("HOME") + "/.config/quickshell/cards/script_card.qml";
+                                }
+                                return Quickshell.env("HOME") + "/.config/quickshell/cards/" + modelData + ".qml";
+                            }
+                            onLoaded: {
+                                if (typeof modelData === "string" && modelData.indexOf("script:") === 0 && item) {
+                                    var sId = modelData.substring(7);
+                                    for (var i = 0; i < ccScope.customScripts.length; i++) {
+                                        var s = ccScope.customScripts[i];
+                                        if (s.id === sId) {
+                                            item.scriptCommand = s.command || "";
+                                            item.intervalSec = s.interval_seconds || 10;
+                                            item.scriptIcon = s.icon || "💻";
+                                            item.onClickCmd = s.on_click || "";
+                                            item.cardName = s.name || "Custom Script";
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("Osd.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Wayland
+import Quickshell.Io
+
+Scope {
+    id: osdScope
+
+    FileView {
+        id: shellConfigFile
+        path: Quickshell.env("HOME") + "/.config/quickshell/zenith-shell.json"
+        watchChanges: true
+    }
+
+    readonly property var shellConfig: {
+        try {
+            var txt = shellConfigFile.text().trim();
+            if (txt.length > 0) return JSON.parse(txt);
+        } catch (e) {}
+        return {};
+    }
+
+    readonly property var osdConfig: (osdScope.shellConfig && osdScope.shellConfig.osd) || {}
+    readonly property bool isOsdEnabled: osdScope.osdConfig.enabled !== undefined ? osdScope.osdConfig.enabled : true
+    readonly property string osdPos: osdScope.osdConfig.position || "bottom"
+    readonly property string osdOrientation: osdScope.osdConfig.orientation || "horizontal"
+    readonly property int osdWidth: osdScope.osdConfig.width || 260
+    readonly property int osdHeight: osdScope.osdConfig.height || 48
+    readonly property int osdTimeout: osdScope.osdConfig.timeout_ms || 2000
+    readonly property bool showPercent: osdScope.osdConfig.show_percentage !== undefined ? osdScope.osdConfig.show_percentage : true
+    readonly property bool showIcon: osdScope.osdConfig.show_icon !== undefined ? osdScope.osdConfig.show_icon : true
+    readonly property color bgColor: (osdScope.shellConfig.styling && osdScope.shellConfig.styling.background) || "#1e1e2e"
+    readonly property color accentColor: (osdScope.shellConfig.styling && osdScope.shellConfig.styling.accent) || "#89b4fa"
+    readonly property color textColor: (osdScope.shellConfig.styling && osdScope.shellConfig.styling.text_color) || "#cdd6f4"
+
+    property string currentIcon: "🔊"
+    property string currentText: "50%"
+    property real currentProgress: 0.5
+    property real lastVol: -1.0
+    property real lastBright: -1.0
+    property bool isOsdActive: false
+
+    // IPC Handler voor OSD aanroepen
+    IpcHandler {
+        target: "osd"
+        function popup(icon: string, text: string, val: real) {
+            if (!osdScope.isOsdEnabled) return;
+            osdScope.currentIcon = icon || "🔊";
+            osdScope.currentText = text || "";
+            osdScope.currentProgress = Math.max(0.0, Math.min(1.0, val || 0.0));
+            osdScope.isOsdActive = true;
+            hideTimer.restart();
+        }
+        function triggerVolume() { volWatcher.running = true; }
+        function triggerBrightness() { brightWatcher.running = true; }
+    }
+
+    Timer {
+        id: hideTimer
+        interval: osdScope.osdTimeout
+        onTriggered: osdScope.isOsdActive = false
+    }
+
+    // WirePlumber watcher
+    Process {
+        id: volWatcher
+        command: ["bash", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || echo 'Volume: 0.50'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var s = data.trim();
+                var isMuted = s.indexOf("[MUTED]") !== -1;
+                var match = s.match(/Volume:\s+([0-9.]+)/);
+                if (match && match[1]) {
+                    var v = parseFloat(match[1]);
+                    if (osdScope.lastVol >= 0.0 && Math.abs(osdScope.lastVol - v) > 0.005) {
+                        osdScope.popup(isMuted ? "🔇" : (v > 0.5 ? "🔊" : "🔉"), isMuted ? "Gedempt" : Math.round(v * 100) + "%", v);
+                    }
+                    osdScope.lastVol = v;
+                }
+            }
+        }
+    }
+    Timer { interval: 600; running: osdScope.isOsdEnabled; repeat: true; onTriggered: volWatcher.running = true }
+
+    // Brightnessctl watcher
+    Process {
+        id: brightWatcher
+        command: ["bash", "-c", "brightnessctl -m 2>/dev/null | cut -d, -f4 | tr -d '%'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var val = parseInt(data.trim());
+                if (!isNaN(val)) {
+                    var b = val / 100.0;
+                    if (osdScope.lastBright >= 0.0 && Math.abs(osdScope.lastBright - b) > 0.01) {
+                        osdScope.popup("☀️", val + "%", b);
+                    }
+                    osdScope.lastBright = b;
+                }
+            }
+        }
+    }
+    Timer { interval: 800; running: osdScope.isOsdEnabled; repeat: true; onTriggered: brightWatcher.running = true }
+
+    // OSD Floating Layer Window
+    PanelWindow {
+        id: osdWin
+        visible: osdScope.isOsdActive || osdContainer.opacity > 0.01
+        color: "transparent"
+        implicitWidth: osdScope.osdOrientation === "vertical" ? osdScope.osdHeight : osdScope.osdWidth
+        implicitHeight: osdScope.osdOrientation === "vertical" ? osdScope.osdWidth : osdScope.osdHeight
+
+        anchors {
+            top: osdScope.osdPos.indexOf("top") !== -1
+            bottom: osdScope.osdPos.indexOf("bottom") !== -1
+            right: osdScope.osdPos.indexOf("right") !== -1
+            left: osdScope.osdPos.indexOf("left") !== -1
+        }
+        margins {
+            top: 40
+            bottom: 40
+            left: 30
+            right: 30
+        }
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+        Rectangle {
+            id: osdContainer
+            anchors.fill: parent
+            radius: parent.height / 2
+            color: Qt.alpha(osdScope.bgColor, 0.94)
+            border.width: 1
+            border.color: Qt.alpha(osdScope.accentColor, 0.4)
+
+            opacity: osdScope.isOsdActive ? 1.0 : 0.0
+            scale: osdScope.isOsdActive ? 1.0 : 0.90
+
+            Behavior on opacity {
+                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+            }
+            Behavior on scale {
+                NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+            }
+
+            // Horizontale Layout
+            RowLayout {
+                visible: osdScope.osdOrientation !== "vertical"
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                spacing: 12
+
+                Text {
+                    visible: osdScope.showIcon
+                    text: osdScope.currentIcon
+                    font.pixelSize: 16
+                    color: osdScope.accentColor
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 8
+                    radius: 4
+                    color: "#313244"
+                    Rectangle {
+                        height: parent.height
+                        width: parent.width * osdScope.currentProgress
+                        radius: 4
+                        color: osdScope.accentColor
+                        Behavior on width {
+                            NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                        }
+                    }
+                }
+
+                Text {
+                    visible: osdScope.showPercent
+                    text: osdScope.currentText
+                    font.bold: true
+                    font.pixelSize: 11
+                    color: osdScope.textColor
+                }
+            }
+
+            // Verticale Layout
+            ColumnLayout {
+                visible: osdScope.osdOrientation === "vertical"
+                anchors.fill: parent
+                anchors.topMargin: 14
+                anchors.bottomMargin: 14
+                spacing: 10
+
+                Text {
+                    visible: osdScope.showIcon
+                    text: osdScope.currentIcon
+                    font.pixelSize: 16
+                    Layout.alignment: Qt.AlignHCenter
+                    color: osdScope.accentColor
+                }
+
+                Rectangle {
+                    Layout.fillHeight: true
+                    width: 8
+                    radius: 4
+                    color: "#313244"
+                    Layout.alignment: Qt.AlignHCenter
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: parent.height * osdScope.currentProgress
+                        radius: 4
+                        color: osdScope.accentColor
+                        Behavior on height {
+                            NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                        }
+                    }
+                }
+
+                Text {
+                    visible: osdScope.showPercent
+                    text: osdScope.currentText
+                    font.bold: true
+                    font.pixelSize: 10
+                    Layout.alignment: Qt.AlignHCenter
+                    color: osdScope.textColor
+                }
+            }
+        }
+    }
+}
+"###,
+    );
+}
+
+fn ensure_default_cards(dir: &PathBuf) {
+    ensure_file_exists(
+        &dir.join("wifi_toggle.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 52
+    radius: 10
+    color: isEnabled ? Qt.alpha("#89b4fa", 0.18) : Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: isEnabled ? "#89b4fa" : "#45475a"
+
+    property bool isEnabled: false
+    property string ssid: "Wi-Fi"
+
+    Process {
+        id: wifiStatus
+        command: ["bash", "-c", "nmcli radio wifi && nmcli -t -f active,ssid dev wifi | grep '^yes' | cut -d: -f2"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var lines = data.trim().split("\n");
+                if (lines.length > 0) cardRoot.isEnabled = (lines[0].trim() === "enabled");
+                if (lines.length > 1 && lines[1].trim().length > 0) cardRoot.ssid = lines[1].trim();
+                else cardRoot.ssid = cardRoot.isEnabled ? "Verbonden" : "Uitgeschakeld";
+            }
+        }
+    }
+    Timer { interval: 4000; running: true; repeat: true; onTriggered: wifiStatus.running = true }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 10
+
+        Text {
+            text: cardRoot.isEnabled ? "📶" : "󰤭"
+            font.pixelSize: 18
+            color: cardRoot.isEnabled ? "#89b4fa" : "#a6adc8"
+        }
+
+        ColumnLayout {
+            spacing: 2
+            Text {
+                text: "Wi-Fi"
+                font.bold: true
+                font.pixelSize: 12
+                color: "#cdd6f4"
+            }
+            Text {
+                text: cardRoot.ssid
+                font.pixelSize: 10
+                color: "#a6adc8"
+                elide: Text.ElideRight
+                Layout.maximumWidth: 200
+            }
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Rectangle {
+            width: 38
+            height: 20
+            radius: 10
+            color: cardRoot.isEnabled ? "#89b4fa" : "#45475a"
+            Rectangle {
+                width: 16
+                height: 16
+                radius: 8
+                color: "#1e1e2e"
+                anchors.verticalCenter: parent.verticalCenter
+                x: cardRoot.isEnabled ? 20 : 2
+                Behavior on x { NumberAnimation { duration: 150 } }
+            }
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: {
+            var cmd = cardRoot.isEnabled ? "nmcli radio wifi off" : "nmcli radio wifi on";
+            toggleProc.command = ["bash", "-c", cmd];
+            toggleProc.running = true;
+            cardRoot.isEnabled = !cardRoot.isEnabled;
+        }
+    }
+    Process { id: toggleProc; onExited: wifiStatus.running = true }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("bluetooth_toggle.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 52
+    radius: 10
+    color: isEnabled ? Qt.alpha("#89b4fa", 0.18) : Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: isEnabled ? "#89b4fa" : "#45475a"
+
+    property bool isEnabled: false
+    property string deviceName: "Bluetooth"
+
+    Process {
+        id: btStatus
+        command: ["bash", "-c", "bluetoothctl show | grep 'Powered: yes' >/dev/null && echo 'on' || echo 'off'; bluetoothctl info 2>/dev/null | grep 'Name:' | cut -d' ' -f2-"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var lines = data.trim().split("\n");
+                if (lines.length > 0) cardRoot.isEnabled = (lines[0].trim() === "on");
+                if (lines.length > 1 && lines[1].trim().length > 0) cardRoot.deviceName = lines[1].trim();
+                else cardRoot.deviceName = cardRoot.isEnabled ? "Ingeschakeld" : "Uitgeschakeld";
+            }
+        }
+    }
+    Timer { interval: 4000; running: true; repeat: true; onTriggered: btStatus.running = true }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 10
+
+        Text {
+            text: "ᛒ"
+            font.pixelSize: 18
+            color: cardRoot.isEnabled ? "#89b4fa" : "#a6adc8"
+        }
+
+        ColumnLayout {
+            spacing: 2
+            Text {
+                text: "Bluetooth"
+                font.bold: true
+                font.pixelSize: 12
+                color: "#cdd6f4"
+            }
+            Text {
+                text: cardRoot.deviceName
+                font.pixelSize: 10
+                color: "#a6adc8"
+                elide: Text.ElideRight
+                Layout.maximumWidth: 200
+            }
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Rectangle {
+            width: 38
+            height: 20
+            radius: 10
+            color: cardRoot.isEnabled ? "#89b4fa" : "#45475a"
+            Rectangle {
+                width: 16
+                height: 16
+                radius: 8
+                color: "#1e1e2e"
+                anchors.verticalCenter: parent.verticalCenter
+                x: cardRoot.isEnabled ? 20 : 2
+                Behavior on x { NumberAnimation { duration: 150 } }
+            }
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: {
+            var cmd = cardRoot.isEnabled ? "bluetoothctl power off" : "bluetoothctl power on";
+            toggleProc.command = ["bash", "-c", cmd];
+            toggleProc.running = true;
+            cardRoot.isEnabled = !cardRoot.isEnabled;
+        }
+    }
+    Process { id: toggleProc; onExited: btStatus.running = true }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("dnd_toggle.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 52
+    radius: 10
+    color: isDnd ? Qt.alpha("#f38ba8", 0.18) : Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: isDnd ? "#f38ba8" : "#45475a"
+
+    property bool isDnd: false
+
+    Process {
+        id: dndStatus
+        command: ["bash", "-c", "dunstctl is-paused 2>/dev/null || echo 'false'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => { cardRoot.isDnd = (data.trim() === "true"); }
+        }
+    }
+    Timer { interval: 3000; running: true; repeat: true; onTriggered: dndStatus.running = true }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 10
+
+        Text {
+            text: cardRoot.isDnd ? "🔕" : "🔔"
+            font.pixelSize: 18
+            color: cardRoot.isDnd ? "#f38ba8" : "#cdd6f4"
+        }
+
+        ColumnLayout {
+            spacing: 2
+            Text {
+                text: "Niet Storen (DND)"
+                font.bold: true
+                font.pixelSize: 12
+                color: "#cdd6f4"
+            }
+            Text {
+                text: cardRoot.isDnd ? "Notificaties gedempt" : "Notificaties actief"
+                font.pixelSize: 10
+                color: "#a6adc8"
+            }
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Rectangle {
+            width: 38
+            height: 20
+            radius: 10
+            color: cardRoot.isDnd ? "#f38ba8" : "#45475a"
+            Rectangle {
+                width: 16
+                height: 16
+                radius: 8
+                color: "#1e1e2e"
+                anchors.verticalCenter: parent.verticalCenter
+                x: cardRoot.isDnd ? 20 : 2
+                Behavior on x { NumberAnimation { duration: 150 } }
+            }
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: {
+            toggleProc.command = ["bash", "-c", "dunstctl set-paused toggle"];
+            toggleProc.running = true;
+            cardRoot.isDnd = !cardRoot.isDnd;
+        }
+    }
+    Process { id: toggleProc; onExited: dndStatus.running = true }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("nightlight_toggle.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 52
+    radius: 10
+    color: isNight ? Qt.alpha("#fab387", 0.18) : Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: isNight ? "#fab387" : "#45475a"
+
+    property bool isNight: false
+
+    Process {
+        id: nightStatus
+        command: ["bash", "-c", "hyprshade current 2>/dev/null || echo 'off'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => { cardRoot.isNight = (data.trim().length > 0 && data.trim() !== "off"); }
+        }
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 10
+
+        Text {
+            text: "🌙"
+            font.pixelSize: 18
+            color: cardRoot.isNight ? "#fab387" : "#cdd6f4"
+        }
+
+        ColumnLayout {
+            spacing: 2
+            Text {
+                text: "Nachtmodus"
+                font.bold: true
+                font.pixelSize: 12
+                color: "#cdd6f4"
+            }
+            Text {
+                text: cardRoot.isNight ? "Blauwfilter actief" : "Standaard kleuren"
+                font.pixelSize: 10
+                color: "#a6adc8"
+            }
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Rectangle {
+            width: 38
+            height: 20
+            radius: 10
+            color: cardRoot.isNight ? "#fab387" : "#45475a"
+            Rectangle {
+                width: 16
+                height: 16
+                radius: 8
+                color: "#1e1e2e"
+                anchors.verticalCenter: parent.verticalCenter
+                x: cardRoot.isNight ? 20 : 2
+                Behavior on x { NumberAnimation { duration: 150 } }
+            }
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: {
+            var cmd = cardRoot.isNight ? "hyprshade off 2>/dev/null || true" : "hyprshade on blue-light-filter 2>/dev/null || true";
+            toggleProc.command = ["bash", "-c", cmd];
+            toggleProc.running = true;
+            cardRoot.isNight = !cardRoot.isNight;
+        }
+    }
+    Process { id: toggleProc }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("volume_slider.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 64
+    radius: 10
+    color: Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: "#45475a"
+
+    property real volumeLevel: 0.5
+    property bool isMuted: false
+
+    Process {
+        id: volProc
+        command: ["bash", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || echo 'Volume: 0.50'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var s = data.trim();
+                cardRoot.isMuted = s.indexOf("[MUTED]") !== -1;
+                var match = s.match(/Volume:\s+([0-9.]+)/);
+                if (match && match[1]) {
+                    cardRoot.volumeLevel = Math.min(1.0, parseFloat(match[1]));
+                }
+            }
+        }
+    }
+    Timer { interval: 2000; running: true; repeat: true; onTriggered: volProc.running = true }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 10
+        spacing: 6
+
+        RowLayout {
+            Layout.fillWidth: true
+            Text {
+                text: cardRoot.isMuted ? "🔇" : (cardRoot.volumeLevel > 0.5 ? "🔊" : "🔉")
+                font.pixelSize: 14
+                color: cardRoot.isMuted ? "#f38ba8" : "#89b4fa"
+            }
+            Text {
+                text: "Luidspreker Volume"
+                font.bold: true
+                font.pixelSize: 11
+                color: "#cdd6f4"
+            }
+            Item { Layout.fillWidth: true }
+            Text {
+                text: cardRoot.isMuted ? "Gedempt" : Math.round(cardRoot.volumeLevel * 100) + "%"
+                font.pixelSize: 11
+                font.bold: true
+                color: cardRoot.isMuted ? "#f38ba8" : "#89b4fa"
+            }
+        }
+
+        // Custom Slider Track
+        Rectangle {
+            id: track
+            Layout.fillWidth: true
+            height: 12
+            radius: 6
+            color: "#313244"
+
+            Rectangle {
+                height: parent.height
+                width: parent.width * cardRoot.volumeLevel
+                radius: 6
+                color: cardRoot.isMuted ? "#585b70" : "#89b4fa"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                preventStealing: true
+                function updatePos(mouse) {
+                    var newLvl = Math.max(0.0, Math.min(1.0, mouse.x / track.width));
+                    cardRoot.volumeLevel = newLvl;
+                    setProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", newLvl.toFixed(2)];
+                    setProc.running = true;
+                }
+                onPressed: mouse => updatePos(mouse)
+                onPositionChanged: mouse => updatePos(mouse)
+            }
+        }
+    }
+    Process { id: setProc }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("mic_slider.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 64
+    radius: 10
+    color: Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: "#45475a"
+
+    property real micLevel: 0.5
+    property bool isMuted: false
+
+    Process {
+        id: micProc
+        command: ["bash", "-c", "wpctl get-volume @DEFAULT_AUDIO_SOURCE@ 2>/dev/null || echo 'Volume: 0.50'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var s = data.trim();
+                cardRoot.isMuted = s.indexOf("[MUTED]") !== -1;
+                var match = s.match(/Volume:\s+([0-9.]+)/);
+                if (match && match[1]) {
+                    cardRoot.micLevel = Math.min(1.0, parseFloat(match[1]));
+                }
+            }
+        }
+    }
+    Timer { interval: 2500; running: true; repeat: true; onTriggered: micProc.running = true }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 10
+        spacing: 6
+
+        RowLayout {
+            Layout.fillWidth: true
+            Text {
+                text: cardRoot.isMuted ? "🎙️❌" : "🎙️"
+                font.pixelSize: 14
+                color: cardRoot.isMuted ? "#f38ba8" : "#a6e3a1"
+            }
+            Text {
+                text: "Microfoon Ingang"
+                font.bold: true
+                font.pixelSize: 11
+                color: "#cdd6f4"
+            }
+            Item { Layout.fillWidth: true }
+            Text {
+                text: cardRoot.isMuted ? "Gedempt" : Math.round(cardRoot.micLevel * 100) + "%"
+                font.pixelSize: 11
+                font.bold: true
+                color: cardRoot.isMuted ? "#f38ba8" : "#a6e3a1"
+            }
+        }
+
+        // Custom Slider Track
+        Rectangle {
+            id: track
+            Layout.fillWidth: true
+            height: 12
+            radius: 6
+            color: "#313244"
+
+            Rectangle {
+                height: parent.height
+                width: parent.width * cardRoot.micLevel
+                radius: 6
+                color: cardRoot.isMuted ? "#585b70" : "#a6e3a1"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                preventStealing: true
+                function updatePos(mouse) {
+                    var newLvl = Math.max(0.0, Math.min(1.0, mouse.x / track.width));
+                    cardRoot.micLevel = newLvl;
+                    setProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SOURCE@", newLvl.toFixed(2)];
+                    setProc.running = true;
+                }
+                onPressed: mouse => updatePos(mouse)
+                onPositionChanged: mouse => updatePos(mouse)
+            }
+        }
+    }
+    Process { id: setProc }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("brightness_slider.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 64
+    radius: 10
+    color: Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: "#45475a"
+
+    property real brightnessLevel: 0.5
+
+    Process {
+        id: brightProc
+        command: ["bash", "-c", "brightnessctl -m 2>/dev/null | cut -d, -f4 | tr -d '%'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var val = parseInt(data.trim());
+                if (!isNaN(val)) cardRoot.brightnessLevel = Math.max(0.05, Math.min(1.0, val / 100.0));
+            }
+        }
+    }
+    Timer { interval: 3000; running: true; repeat: true; onTriggered: brightProc.running = true }
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 10
+        spacing: 6
+
+        RowLayout {
+            Layout.fillWidth: true
+            Text {
+                text: "☀️"
+                font.pixelSize: 14
+                color: "#f9e2af"
+            }
+            Text {
+                text: "Schermhelderheid"
+                font.bold: true
+                font.pixelSize: 11
+                color: "#cdd6f4"
+            }
+            Item { Layout.fillWidth: true }
+            Text {
+                text: Math.round(cardRoot.brightnessLevel * 100) + "%"
+                font.pixelSize: 11
+                font.bold: true
+                color: "#f9e2af"
+            }
+        }
+
+        // Custom Slider Track
+        Rectangle {
+            id: track
+            Layout.fillWidth: true
+            height: 12
+            radius: 6
+            color: "#313244"
+
+            Rectangle {
+                height: parent.height
+                width: parent.width * cardRoot.brightnessLevel
+                radius: 6
+                color: "#f9e2af"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                preventStealing: true
+                function updatePos(mouse) {
+                    var newLvl = Math.max(0.05, Math.min(1.0, mouse.x / track.width));
+                    cardRoot.brightnessLevel = newLvl;
+                    setProc.command = ["brightnessctl", "s", Math.round(newLvl * 100) + "%"];
+                    setProc.running = true;
+                }
+                onPressed: mouse => updatePos(mouse)
+                onPositionChanged: mouse => updatePos(mouse)
+            }
+        }
+    }
+    Process { id: setProc }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("mpris_card.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 86
+    radius: 12
+    color: Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: "#45475a"
+
+    property string title: "Geen media actief"
+    property string artist: "Antigravity Zenith"
+    property string status: "Stopped"
+
+    Process {
+        id: mprisProc
+        command: ["bash", "-c", "playerctl metadata --format '{{title}};;{{artist}};;{{status}}' 2>/dev/null || echo 'Geen media;;-- ;;Stopped'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var p = data.trim().split(";;");
+                if (p.length >= 3) {
+                    cardRoot.title = p[0].length > 32 ? p[0].substring(0, 30) + "..." : p[0];
+                    cardRoot.artist = p[1].length > 25 ? p[1].substring(0, 23) + "..." : p[1];
+                    cardRoot.status = p[2];
+                }
+            }
+        }
+    }
+    Timer { interval: 1500; running: true; repeat: true; onTriggered: mprisProc.running = true }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 12
+
+        Rectangle {
+            width: 48
+            height: 48
+            radius: 8
+            color: Qt.alpha("#89b4fa", 0.2)
+            Text {
+                anchors.centerIn: parent
+                text: "🎵"
+                font.pixelSize: 22
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 2
+            Text {
+                text: cardRoot.title
+                font.bold: true
+                font.pixelSize: 12
+                color: "#cdd6f4"
+                elide: Text.ElideRight
+            }
+            Text {
+                text: cardRoot.artist
+                font.pixelSize: 10
+                color: "#a6adc8"
+                elide: Text.ElideRight
+            }
+            RowLayout {
+                spacing: 14
+                Text {
+                    text: "⏮"
+                    font.pixelSize: 14
+                    color: "#cdd6f4"
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { cmdProc.command = ["playerctl", "previous"]; cmdProc.running = true; }
+                    }
+                }
+                Text {
+                    text: cardRoot.status === "Playing" ? "⏸" : "▶"
+                    font.pixelSize: 16
+                    color: "#89b4fa"
+                    font.bold: true
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { cmdProc.command = ["playerctl", "play-pause"]; cmdProc.running = true; }
+                    }
+                }
+                Text {
+                    text: "⏭"
+                    font.pixelSize: 14
+                    color: "#cdd6f4"
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { cmdProc.command = ["playerctl", "next"]; cmdProc.running = true; }
+                    }
+                }
+            }
+        }
+    }
+    Process { id: cmdProc; onExited: mprisProc.running = true }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("battery_card.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 56
+    radius: 10
+    color: Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: "#45475a"
+
+    property int percent: 100
+    property string status: "Discharging"
+
+    Process {
+        id: batProc
+        command: ["bash", "-c", "cat /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -n1; cat /sys/class/power_supply/BAT*/status 2>/dev/null | head -n1"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                var lines = data.trim().split("\n");
+                if (lines.length > 0 && lines[0].length > 0) {
+                    var p = parseInt(lines[0]);
+                    if (!isNaN(p)) cardRoot.percent = p;
+                }
+                if (lines.length > 1 && lines[1].length > 0) {
+                    cardRoot.status = lines[1].trim();
+                }
+            }
+        }
+    }
+    Timer { interval: 8000; running: true; repeat: true; onTriggered: batProc.running = true }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 10
+
+        Text {
+            text: cardRoot.status === "Charging" ? "⚡" : (cardRoot.percent > 20 ? "🔋" : "🪫")
+            font.pixelSize: 18
+            color: cardRoot.percent > 20 ? "#a6e3a1" : "#f38ba8"
+        }
+
+        ColumnLayout {
+            spacing: 2
+            Text {
+                text: "Batterij & Energie"
+                font.bold: true
+                font.pixelSize: 12
+                color: "#cdd6f4"
+            }
+            Text {
+                text: cardRoot.status === "Charging" ? "Opladen (" + cardRoot.percent + "%)" : "Resterend: " + cardRoot.percent + "%"
+                font.pixelSize: 10
+                color: "#a6adc8"
+            }
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Rectangle {
+            width: 48
+            height: 18
+            radius: 4
+            color: "#313244"
+            border.width: 1
+            border.color: "#45475a"
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.margins: 2
+                width: (parent.width - 4) * Math.min(1.0, cardRoot.percent / 100.0)
+                radius: 2
+                color: cardRoot.percent > 20 ? "#a6e3a1" : "#f38ba8"
+            }
+        }
+    }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("power_strip.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 48
+    radius: 10
+    color: Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: "#45475a"
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 8
+        spacing: 8
+
+        component PowerButton: Rectangle {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            radius: 8
+            color: btnArea.containsMouse ? Qt.alpha("#89b4fa", 0.25) : Qt.alpha("#cdd6f4", 0.06)
+            property string icon: ""
+            property string tip: ""
+            property var action: null
+
+            Text {
+                anchors.centerIn: parent
+                text: parent.icon
+                font.pixelSize: 14
+            }
+            MouseArea {
+                id: btnArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: if (action) action()
+            }
+        }
+
+        PowerButton {
+            icon: "🔒"
+            tip: "Vergrendel scherm"
+            action: () => { pProc.command = ["bash", "-c", "hyprlock || swaylock || loginctl lock-session"]; pProc.running = true; }
+        }
+        PowerButton {
+            icon: "💤"
+            tip: "Slaapstand"
+            action: () => { pProc.command = ["systemctl", "suspend"]; pProc.running = true; }
+        }
+        PowerButton {
+            icon: "🚪"
+            tip: "Afmelden"
+            action: () => { pProc.command = ["hyprctl", "dispatch", "exit"]; pProc.running = true; }
+        }
+        PowerButton {
+            icon: "🔄"
+            tip: "Herstarten"
+            action: () => { pProc.command = ["systemctl", "reboot"]; pProc.running = true; }
+        }
+        PowerButton {
+            icon: "⏻"
+            tip: "Afsluiten"
+            action: () => { pProc.command = ["systemctl", "poweroff"]; pProc.running = true; }
+        }
+    }
+    Process { id: pProc }
+}
+"###,
+    );
+
+    ensure_file_exists(
+        &dir.join("script_card.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+Rectangle {
+    id: cardRoot
+    Layout.fillWidth: true
+    implicitHeight: 52
+    radius: 10
+    color: Qt.alpha("#cdd6f4", 0.08)
+    border.width: 1
+    border.color: "#45475a"
+
+    property string scriptCommand: ""
+    property int intervalSec: 10
+    property string scriptIcon: "💻"
+    property string onClickCmd: ""
+    property string cardName: "Custom Script"
+    property string liveOutput: "Laden..."
+
+    Process {
+        id: proc
+        command: ["bash", "-c", cardRoot.scriptCommand]
+        running: cardRoot.scriptCommand.length > 0
+        stdout: SplitParser {
+            onRead: data => { cardRoot.liveOutput = data.trim(); }
+        }
+    }
+    Timer {
+        interval: Math.max(1000, cardRoot.intervalSec * 1000)
+        running: cardRoot.scriptCommand.length > 0
+        repeat: true
+        onTriggered: proc.running = true
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.margins: 12
+        spacing: 10
+
+        Text {
+            text: cardRoot.scriptIcon
+            font.pixelSize: 18
+        }
+
+        ColumnLayout {
+            spacing: 2
+            Text {
+                text: cardRoot.cardName
+                font.bold: true
+                font.pixelSize: 12
+                color: "#cdd6f4"
+            }
+            Text {
+                text: cardRoot.liveOutput
+                font.pixelSize: 10
+                color: "#89b4fa"
+                elide: Text.ElideRight
+                Layout.maximumWidth: 260
+            }
+        }
+
+        Item { Layout.fillWidth: true }
+
+        Text {
+            visible: cardRoot.onClickCmd.length > 0
+            text: "➔"
+            font.pixelSize: 12
+            color: "#6c7086"
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: cardRoot.onClickCmd.length > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: {
+            if (cardRoot.onClickCmd.length > 0) {
+                clickProc.command = ["bash", "-c", cardRoot.onClickCmd];
+                clickProc.running = true;
+            }
+        }
+    }
+    Process { id: clickProc }
 }
 "###,
     );
@@ -1357,20 +2906,44 @@ window#waybar {
 }
 
 fn ensure_hyprland_source(home: &PathBuf) {
-    let hypr_conf = home.join(".config/hypr/hyprland.conf");
-    let zenith_conf = home.join(".config/hypr/zenith.conf");
+    let hypr_dir = home.join(".config/hypr");
+    let _ = create_dir_all(&hypr_dir);
+    let hypr_conf = hypr_dir.join("hyprland.conf");
+    let zenith_conf = hypr_dir.join("zenith.conf");
 
     if !zenith_conf.exists() {
-        ensure_file_exists(&zenith_conf, "# Generated by Zenith Control\n");
+        let initial_cfg = crate::backend::config::load_config();
+        crate::backend::config::save_config(&initial_cfg);
+    } else if let Ok(content) = read_to_string(&zenith_conf) {
+        if !content.contains("org.zenith.control") {
+            let initial_cfg = crate::backend::config::load_config();
+            crate::backend::config::save_config(&initial_cfg);
+        }
     }
 
-    if let Ok(content) = read_to_string(&hypr_conf) {
-        let source_line = "source = ~/.config/hypr/zenith.conf";
-        if !content.contains(source_line) {
-            if let Ok(mut file) = OpenOptions::new().append(true).open(&hypr_conf) {
-                let _ = writeln!(file, "\n# Injected by Zenith Control\n{}", source_line);
+    let source_line = "source = ~/.config/hypr/zenith.conf";
+    if hypr_conf.exists() {
+        if let Ok(content) = read_to_string(&hypr_conf) {
+            if !content.contains(source_line) {
+                if let Ok(mut file) = OpenOptions::new().append(true).open(&hypr_conf) {
+                    let _ = writeln!(file, "\n# Injected by Zenith Control\n{}", source_line);
+                }
             }
         }
+    } else {
+        let default_hypr = format!(
+            "# Hyprland Configuration with Zenith Control\n\
+            $mainMod = SUPER\n\
+            bind = $mainMod, Q, exec, kitty\n\
+            bind = $mainMod, C, killactive,\n\
+            bind = $mainMod, M, exit,\n\
+            bind = $mainMod, V, togglefloating,\n\
+            bind = $mainMod, R, exec, rofi -show drun || wofi --show drun\n\n\
+            # Injected by Zenith Control\n\
+            {}\n",
+            source_line
+        );
+        let _ = std::fs::write(&hypr_conf, default_hypr);
     }
 }
 

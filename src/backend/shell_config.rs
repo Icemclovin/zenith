@@ -134,6 +134,113 @@ impl Default for ShellCustom {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ControlCenterConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_cc_pos")]
+    pub position: String, // "top-right", "bottom-right", "top-left", "bottom-left", "floating-center"
+    #[serde(default = "default_cc_width")]
+    pub width: i32,
+    #[serde(default = "default_cc_max_height")]
+    pub max_height: i32,
+    #[serde(default = "default_cc_border_radius")]
+    pub border_radius: i32,
+    #[serde(default = "default_true")]
+    pub blur_behind: bool,
+    #[serde(default = "default_cc_opacity")]
+    pub opacity: f64,
+    #[serde(default = "default_cc_cards")]
+    pub cards: Vec<String>,
+}
+
+fn default_true() -> bool { true }
+fn default_cc_pos() -> String { "top-right".to_string() }
+fn default_cc_width() -> i32 { 380 }
+fn default_cc_max_height() -> i32 { 600 }
+fn default_cc_border_radius() -> i32 { 16 }
+fn default_cc_opacity() -> f64 { 0.92 }
+fn default_cc_cards() -> Vec<String> {
+    vec![
+        "wifi_toggle".to_string(),
+        "bluetooth_toggle".to_string(),
+        "dnd_toggle".to_string(),
+        "nightlight_toggle".to_string(),
+        "volume_slider".to_string(),
+        "mic_slider".to_string(),
+        "brightness_slider".to_string(),
+        "mpris_card".to_string(),
+        "battery_card".to_string(),
+        "power_strip".to_string(),
+    ]
+}
+
+impl Default for ControlCenterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            position: default_cc_pos(),
+            width: default_cc_width(),
+            max_height: default_cc_max_height(),
+            border_radius: default_cc_border_radius(),
+            blur_behind: true,
+            opacity: default_cc_opacity(),
+            cards: default_cc_cards(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct OsdConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_osd_pos")]
+    pub position: String, // "bottom", "top", "center", "top-right", "bottom-right"
+    #[serde(default = "default_osd_timeout")]
+    pub timeout_ms: u32,
+    #[serde(default = "default_osd_width")]
+    pub width: i32,
+    #[serde(default = "default_osd_height")]
+    pub height: i32,
+    #[serde(default = "default_osd_orientation")]
+    pub orientation: String, // "horizontal", "vertical"
+    #[serde(default = "default_true")]
+    pub show_percentage: bool,
+    #[serde(default = "default_true")]
+    pub show_icon: bool,
+    #[serde(default = "default_osd_hardware_targets")]
+    pub hardware_targets: Vec<String>, // ["volume", "mic", "brightness"]
+}
+
+fn default_osd_pos() -> String { "bottom".to_string() }
+fn default_osd_timeout() -> u32 { 2000 }
+fn default_osd_width() -> i32 { 260 }
+fn default_osd_height() -> i32 { 48 }
+fn default_osd_orientation() -> String { "horizontal".to_string() }
+fn default_osd_hardware_targets() -> Vec<String> {
+    vec![
+        "volume".to_string(),
+        "mic".to_string(),
+        "brightness".to_string(),
+    ]
+}
+
+impl Default for OsdConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            position: default_osd_pos(),
+            timeout_ms: default_osd_timeout(),
+            width: default_osd_width(),
+            height: default_osd_height(),
+            orientation: default_osd_orientation(),
+            show_percentage: true,
+            show_icon: true,
+            hardware_targets: default_osd_hardware_targets(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct CustomScriptModule {
     pub id: String,
     pub name: String,
@@ -145,6 +252,99 @@ pub struct CustomScriptModule {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct CustomIcons {
+    // Bar modules
+    pub workspaces: String,
+    pub active_window: String,
+    pub clock: String,
+    pub systray: String,
+    pub volume_high: String,
+    pub volume_medium: String,
+    pub volume_muted: String,
+    pub brightness: String,
+    pub power: String,
+    pub launcher: String,
+    pub brand: String,
+    pub media: String,
+    pub media_play: String,
+    pub media_pause: String,
+    pub media_prev: String,
+    pub media_next: String,
+    pub cpu: String,
+    pub ram: String,
+    pub battery_full: String,
+    pub battery_low: String,
+    pub battery_charging: String,
+    pub network: String,
+    pub bluetooth: String,
+    // Control Center cards
+    pub wifi: String,
+    pub dnd_on: String,
+    pub dnd_off: String,
+    pub nightlight: String,
+    pub mic: String,
+    pub mic_muted: String,
+    // Power strip
+    pub lock: String,
+    pub sleep: String,
+    pub logout: String,
+    pub reboot: String,
+    pub shutdown: String,
+    // Misc
+    pub settings: String,
+    pub script: String,
+    pub custom: String,
+    pub close: String,
+}
+
+impl Default for CustomIcons {
+    fn default() -> Self {
+        Self {
+            workspaces: "🗂️".to_string(),
+            active_window: "🪟".to_string(),
+            clock: "🕒".to_string(),
+            systray: "📥".to_string(),
+            volume_high: "🔊".to_string(),
+            volume_medium: "🔉".to_string(),
+            volume_muted: "🔇".to_string(),
+            brightness: "☀️".to_string(),
+            power: "⏻".to_string(),
+            launcher: "🚀".to_string(),
+            brand: "🌟".to_string(),
+            media: "🎵".to_string(),
+            media_play: "▶".to_string(),
+            media_pause: "⏸".to_string(),
+            media_prev: "⏮".to_string(),
+            media_next: "⏭".to_string(),
+            cpu: "🖥".to_string(),
+            ram: "💾".to_string(),
+            battery_full: "🔋".to_string(),
+            battery_low: "🪫".to_string(),
+            battery_charging: "⚡".to_string(),
+            network: "🌐".to_string(),
+            bluetooth: "ᛒ".to_string(),
+            wifi: "📶".to_string(),
+            dnd_on: "🔕".to_string(),
+            dnd_off: "🔔".to_string(),
+            nightlight: "🌙".to_string(),
+            mic: "🎙️".to_string(),
+            mic_muted: "🎙️❌".to_string(),
+            lock: "🔒".to_string(),
+            sleep: "💤".to_string(),
+            logout: "🚪".to_string(),
+            reboot: "🔄".to_string(),
+            shutdown: "⏻".to_string(),
+            settings: "⚙️".to_string(),
+            script: "💻".to_string(),
+            custom: "✨".to_string(),
+            close: "✕".to_string(),
+        }
+    }
+}
+
+fn default_language() -> String { "nl".to_string() }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ZenithShellConfig {
     pub styling: ShellStyling,
     pub layout: ShellLayout,
@@ -152,7 +352,19 @@ pub struct ZenithShellConfig {
     pub panels: ShellPanels,
     pub custom: ShellCustom,
     #[serde(default)]
+    pub control_center: ControlCenterConfig,
+    #[serde(default)]
+    pub osd: OsdConfig,
+    #[serde(default)]
     pub custom_scripts: Vec<CustomScriptModule>,
+    #[serde(default = "default_language")]
+    pub language: String,
+    #[serde(default)]
+    pub auto_palette: bool,
+    #[serde(default)]
+    pub wallpaper_path: String,
+    #[serde(default)]
+    pub custom_icons: CustomIcons,
 }
 
 impl Default for ZenithShellConfig {
@@ -163,7 +375,13 @@ impl Default for ZenithShellConfig {
             modules: ShellModules::default(),
             panels: ShellPanels::default(),
             custom: ShellCustom::default(),
+            control_center: ControlCenterConfig::default(),
+            osd: OsdConfig::default(),
             custom_scripts: Vec::new(),
+            language: default_language(),
+            auto_palette: false,
+            wallpaper_path: String::new(),
+            custom_icons: CustomIcons::default(),
         }
     }
 }
@@ -186,6 +404,11 @@ impl ZenithShellConfig {
     pub fn modules_dir() -> Option<PathBuf> {
         let home = std::env::var("HOME").ok()?;
         Some(PathBuf::from(home).join(".config/quickshell/modules"))
+    }
+
+    pub fn cards_dir() -> Option<PathBuf> {
+        let home = std::env::var("HOME").ok()?;
+        Some(PathBuf::from(home).join(".config/quickshell/cards"))
     }
 
     pub fn load_or_default() -> Self {
@@ -216,109 +439,110 @@ impl ZenithShellConfig {
 
     /// Geeft de lijst van alle bekende ingebouwde modules en ontdekte custom modules
     pub fn discover_available_modules() -> Vec<ModuleInfo> {
+        let cfg = Self::load_or_default();
         let mut list = vec![
             ModuleInfo {
                 id: "workspaces".to_string(),
                 name: "Hyprland Werkbladen".to_string(),
-                icon: "🗂️".to_string(),
+                icon: cfg.custom_icons.workspaces.clone(),
                 description: "Interactieve werkbladknoppen via Hyprland IPC".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "active_window".to_string(),
                 name: "Actief Venster".to_string(),
-                icon: "🪟".to_string(),
+                icon: cfg.custom_icons.active_window.clone(),
                 description: "Titel van het huidige gefocuste venster".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "clock".to_string(),
                 name: "Klok & Kalender".to_string(),
-                icon: "🕒".to_string(),
+                icon: cfg.custom_icons.clock.clone(),
                 description: "Tijd en datumweergave met klikbare acties".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "systray".to_string(),
                 name: "Systeemvak (Tray)".to_string(),
-                icon: "📥".to_string(),
+                icon: cfg.custom_icons.systray.clone(),
                 description: "StatusNotifiers en achtergrondapplicaties".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "volume".to_string(),
                 name: "Geluid / Volume".to_string(),
-                icon: "🔊".to_string(),
+                icon: cfg.custom_icons.volume_high.clone(),
                 description: "Volumeniveau met klik voor dempen en scrolregeling".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "brightness".to_string(),
                 name: "Helderheid".to_string(),
-                icon: "☀️".to_string(),
+                icon: cfg.custom_icons.brightness.clone(),
                 description: "Schermhelderheid aanpassen en uitlezen".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "power".to_string(),
                 name: "Sessie / Afsluiten".to_string(),
-                icon: "⏻".to_string(),
+                icon: cfg.custom_icons.power.clone(),
                 description: "Sessiebeheer (afsluiten, herstarten, vergrendelen)".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "launcher".to_string(),
                 name: "Applicatiemenu".to_string(),
-                icon: "🚀".to_string(),
+                icon: cfg.custom_icons.launcher.clone(),
                 description: "Snelstarter voor Rofi / Wofi menu".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "brand".to_string(),
                 name: "Zenith Label".to_string(),
-                icon: "🌟".to_string(),
+                icon: cfg.custom_icons.brand.clone(),
                 description: "Zenith merklabel en distro-indicatie".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "media".to_string(),
                 name: "Mediaspeler".to_string(),
-                icon: "🎵".to_string(),
+                icon: cfg.custom_icons.media.clone(),
                 description: "Now Playing trackweergave en play/pause knop".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "cpu".to_string(),
                 name: "Processor (CPU)".to_string(),
-                icon: "🖥️".to_string(),
+                icon: cfg.custom_icons.cpu.clone(),
                 description: "Realtime CPU-belasting monitor".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "ram".to_string(),
                 name: "Werkgeheugen (RAM)".to_string(),
-                icon: "💾".to_string(),
+                icon: cfg.custom_icons.ram.clone(),
                 description: "Actueel werkgeheugengebruik".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "battery".to_string(),
                 name: "Batterij / Accu".to_string(),
-                icon: "🔋".to_string(),
+                icon: cfg.custom_icons.battery_full.clone(),
                 description: "Accuniveau, dynamische iconen en laadindicator".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "network".to_string(),
                 name: "Netwerk & Wifi".to_string(),
-                icon: "🌐".to_string(),
+                icon: cfg.custom_icons.network.clone(),
                 description: "Verbindingsstatus en SSID/Ethernet indicatie".to_string(),
                 is_custom: false,
             },
             ModuleInfo {
                 id: "bluetooth".to_string(),
                 name: "Bluetooth".to_string(),
-                icon: "ᛒ".to_string(),
+                icon: cfg.custom_icons.bluetooth.clone(),
                 description: "Bluetooth powerstatus en klik-schakelaar".to_string(),
                 is_custom: false,
             },
@@ -336,7 +560,7 @@ impl ZenithShellConfig {
                                 list.push(ModuleInfo {
                                     id: stem.to_string(),
                                     name: format!("✨ Custom: {}", stem),
-                                    icon: "✨".to_string(),
+                                    icon: cfg.custom_icons.custom.clone(),
                                     description: format!("Aangepast QML widget: {}.qml", stem),
                                     is_custom: true,
                                 });
@@ -348,7 +572,6 @@ impl ZenithShellConfig {
         }
 
         // Voeg ook gedefinieerde Custom Script modules toe
-        let cfg = Self::load_or_default();
         for script in &cfg.custom_scripts {
             let script_id = format!("script:{}", script.id);
             if !list.iter().any(|m| m.id == script_id) {
@@ -368,6 +591,125 @@ impl ZenithShellConfig {
     /// Geeft alle modules inclusief de scripts van deze specifieke instantie
     pub fn discover_modules_for_instance(&self) -> Vec<ModuleInfo> {
         let mut list = Self::discover_available_modules();
+        for script in &self.custom_scripts {
+            let script_id = format!("script:{}", script.id);
+            if !list.iter().any(|m| m.id == script_id) {
+                list.push(ModuleInfo {
+                    id: script_id,
+                    name: format!("💻 Script: {}", script.name),
+                    icon: script.icon.clone(),
+                    description: format!("`{}` (elke {}s)", script.command, script.interval_seconds),
+                    is_custom: true,
+                });
+            }
+        }
+        list
+    }
+
+    /// Geeft alle beschikbare kaarten voor het Control Center (ingebouwd, custom .qml en scripts)
+    pub fn discover_available_cards() -> Vec<ModuleInfo> {
+        let cfg = Self::load_or_default();
+        let mut list = vec![
+            ModuleInfo {
+                id: "wifi_toggle".to_string(),
+                name: "Wi-Fi Schakelaar".to_string(),
+                icon: cfg.custom_icons.wifi.clone(),
+                description: "Draadloos netwerk in-/uitschakelen en actuele verbinding".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "bluetooth_toggle".to_string(),
+                name: "Bluetooth Schakelaar".to_string(),
+                icon: cfg.custom_icons.bluetooth.clone(),
+                description: "Bluetooth in-/uitschakelen en gekoppelde apparaten".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "dnd_toggle".to_string(),
+                name: "Niet Storen (DND)".to_string(),
+                icon: cfg.custom_icons.dnd_on.clone(),
+                description: "Dunst notificaties onderdrukken".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "nightlight_toggle".to_string(),
+                name: "Nachtmodus (Blauwfilter)".to_string(),
+                icon: cfg.custom_icons.nightlight.clone(),
+                description: "Kleurtemperatuur van het scherm aanpassen voor de avond".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "volume_slider".to_string(),
+                name: "Geluidsvolume Slider".to_string(),
+                icon: cfg.custom_icons.volume_high.clone(),
+                description: "Interactieve volumeregeling en dempknop via WirePlumber".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "mic_slider".to_string(),
+                name: "Microfoon Slider".to_string(),
+                icon: cfg.custom_icons.mic.clone(),
+                description: "Opnamevolume en microfoondemping".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "brightness_slider".to_string(),
+                name: "Schermhelderheid Slider".to_string(),
+                icon: cfg.custom_icons.brightness.clone(),
+                description: "Helderheidsregeling van het beeldscherm via brightnessctl".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "mpris_card".to_string(),
+                name: "Media Player Kaart".to_string(),
+                icon: cfg.custom_icons.media.clone(),
+                description: "Volwaardige mediaspeler met album-art en bediening".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "battery_card".to_string(),
+                name: "Accustatus Kaart".to_string(),
+                icon: cfg.custom_icons.battery_full.clone(),
+                description: "Batterijniveau, laadstatus en resterende capaciteit".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "power_strip".to_string(),
+                name: "Systeem Powerstrip".to_string(),
+                icon: cfg.custom_icons.power.clone(), // using power, as power_strip had ⚡ originally, but user did not define "power_strip" in CustomIcons, they defined lock, sleep, logout, reboot, shutdown. The power strip icon in available cards used ⚡ so battery_charging is an option, or power. I'll use power. The prompt didn't specify exactly which to use for power_strip, but let's check: "⚡" was used. The only ⚡ is battery_charging. Or maybe I should just use `cfg.custom_icons.power` which defaults to ⏻. Let's see: user defined `pub power: String`. Let's use `power`.
+                description: "Snelknoppen voor vergrendelen, slaapstand, reboot en uitschakelen".to_string(),
+                is_custom: false,
+            },
+        ];
+
+        // Ontdek custom kaarten in ~/.config/quickshell/cards/*.qml
+        if let Some(dir) = Self::cards_dir() {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() && path.extension().map_or(false, |ext| ext == "qml") {
+                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            if stem != "script_card" && !list.iter().any(|m| m.id == stem) {
+                                list.push(ModuleInfo {
+                                    id: stem.to_string(),
+                                    name: format!("✨ Custom: {}", stem),
+                                    icon: cfg.custom_icons.custom.clone(),
+                                    description: format!("Aangepaste QML kaart: {}.qml", stem),
+                                    is_custom: true,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        list
+    }
+
+    /// Geeft alle kaarten inclusief de custom scripts voor deze instantie
+    pub fn discover_cards_for_instance(&self) -> Vec<ModuleInfo> {
+        let mut list = Self::discover_available_cards();
         for script in &self.custom_scripts {
             let script_id = format!("script:{}", script.id);
             if !list.iter().any(|m| m.id == script_id) {
@@ -456,6 +798,56 @@ mod tests {
         let found = modules.iter().find(|m| m.id == "script:my_ip");
         assert!(found.is_some(), "Script module script:my_ip should be in list");
         assert!(found.unwrap().name.contains("Mijn IP"));
+    }
+
+    #[test]
+    fn test_control_center_and_osd_config() {
+        let mut cfg = ZenithShellConfig::default();
+        cfg.control_center.width = 420;
+        cfg.control_center.position = "bottom-right".to_string();
+        cfg.control_center.cards.push("script:gpu_temp".to_string());
+        cfg.osd.orientation = "vertical".to_string();
+        cfg.osd.timeout_ms = 3000;
+
+        let json = serde_json::to_string_pretty(&cfg).expect("Serialization failed");
+        let parsed: ZenithShellConfig = serde_json::from_str(&json).expect("Deserialization failed");
+        assert_eq!(parsed.control_center.width, 420);
+        assert_eq!(parsed.control_center.position, "bottom-right");
+        assert!(parsed.control_center.cards.contains(&"script:gpu_temp".to_string()));
+        assert_eq!(parsed.osd.orientation, "vertical");
+        assert_eq!(parsed.osd.timeout_ms, 3000);
+    }
+
+    #[test]
+    fn test_discover_available_cards() {
+        let cards = ZenithShellConfig::discover_available_cards();
+        assert!(!cards.is_empty());
+        assert!(cards.iter().any(|c| c.id == "wifi_toggle"));
+        assert!(cards.iter().any(|c| c.id == "bluetooth_toggle"));
+        assert!(cards.iter().any(|c| c.id == "volume_slider"));
+        assert!(cards.iter().any(|c| c.id == "brightness_slider"));
+        assert!(cards.iter().any(|c| c.id == "mpris_card"));
+        assert!(cards.iter().any(|c| c.id == "power_strip"));
+    }
+
+    #[test]
+    fn test_custom_icons_and_language() {
+        let mut cfg = ZenithShellConfig::default();
+        assert_eq!(cfg.language, "nl");
+        assert!(!cfg.auto_palette);
+        assert_eq!(cfg.custom_icons.volume_high, "🔊");
+        assert_eq!(cfg.custom_icons.battery_full, "🔋");
+        assert_eq!(cfg.custom_icons.wifi, "📶");
+
+        cfg.custom_icons.volume_high = "󰕾".to_string();
+        cfg.language = "en".to_string();
+        cfg.auto_palette = true;
+
+        let json = serde_json::to_string_pretty(&cfg).expect("Serialization failed");
+        let parsed: ZenithShellConfig = serde_json::from_str(&json).expect("Deserialization failed");
+        assert_eq!(parsed.custom_icons.volume_high, "󰕾");
+        assert_eq!(parsed.language, "en");
+        assert!(parsed.auto_palette);
     }
 }
 

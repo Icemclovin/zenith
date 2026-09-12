@@ -333,6 +333,12 @@ pub fn save_config(cfg: &ZenithConfig) {
                 $zenith_qs_show_ram = {}\n\
                 $zenith_qs_show_media = {}\n\
                 $zenith_qs_show_power_btn = {}\n\n\
+                # Window Rules voor Zenith Control Center\n\
+                windowrulev2 = float, class:^(org.zenith.control)$\n\
+                windowrulev2 = size 940 700, class:^(org.zenith.control)$\n\
+                windowrulev2 = center, class:^(org.zenith.control)$\n\n\
+                # Autostart actieve statusbalk beheerd door Zenith\n\
+                {}\n\n\
                 $terminal = {}\n\
                 $menu = {}\n\n\
                 general {{\n\
@@ -374,6 +380,11 @@ pub fn save_config(cfg: &ZenithConfig) {
                 cfg.qs_module_spacing, cfg.qs_brand_text, cfg.qs_show_brand, cfg.qs_status_text,
                 cfg.qs_show_status_badge, cfg.qs_show_launcher_btn, cfg.qs_show_ram, cfg.qs_show_media,
                 cfg.qs_show_power_btn,
+                match cfg.active_bar.as_str() {
+                    "quickshell" => "exec-once = quickshell -d",
+                    "waybar" => "exec-once = waybar",
+                    _ => "# Bar autostart uitgeschakeld",
+                },
                 cfg.default_terminal, launcher_cmd
             );
             let _ = f.write_all(content.as_bytes());
