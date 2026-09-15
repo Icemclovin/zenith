@@ -1,5 +1,7 @@
 pub mod control_center_designer;
+pub mod fastfetch_designer;
 pub mod icon_studio;
+pub mod lockscreen_designer;
 pub mod osd_designer;
 pub mod quickshell_designer;
 pub mod window;

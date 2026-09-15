@@ -1,5 +1,6 @@
 pub mod bootstrap;
 pub mod config;
+pub mod fastfetch;
 pub mod hyprland;
 pub mod i18n;
 pub mod palette;

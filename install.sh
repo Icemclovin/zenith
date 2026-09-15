@@ -41,6 +41,7 @@ PACKAGES=(
     bluez-utils
     networkmanager
     ttf-jetbrains-mono-nerd
+    swaybg
 )
 
 if ! command -v cargo &> /dev/null && ! command -v rustup &> /dev/null; then

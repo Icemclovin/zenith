@@ -49,15 +49,35 @@ pub fn set_animations_enabled(enabled: bool) {
 }
 
 pub fn set_wallpaper(path: &str) {
-    // Probeer eerst swww, val terug op hyprpaper
-    let _ = Command::new("swww")
-        .args(["img", path, "--transition-type", "grow"])
+    // 1. swaybg is de meest betrouwbare en lichte Wayland/Hyprland wallpaper manager
+    let _ = Command::new("killall")
+        .args(["-q", "-9", "swaybg"])
+        .status();
+
+    let swaybg_spawned = Command::new("setsid")
+        .args(["swaybg", "-i", path, "-m", "fill"])
         .spawn()
-        .or_else(|_| {
-            Command::new("hyprctl")
-                .args(["hyprpaper", "wallpaper", &format!(",{}", path)])
-                .spawn()
-        });
+        .is_ok();
+
+    // 2. Probeer daarnaast waypaper indien aanwezig
+    let _ = Command::new("waypaper")
+        .args(["--wallpaper", path])
+        .spawn();
+
+    // 3. Probeer hyprpaper met vereiste preload
+    let _ = Command::new("hyprctl")
+        .args(["hyprpaper", "preload", path])
+        .status();
+    let _ = Command::new("hyprctl")
+        .args(["hyprpaper", "wallpaper", &format!(",{}", path)])
+        .spawn();
+
+    // 4. Probeer swww als fallback
+    if !swaybg_spawned {
+        let _ = Command::new("swww")
+            .args(["img", path, "--transition-type", "grow"])
+            .spawn();
+    }
 }
 
 // ==========================================
@@ -102,4 +122,18 @@ pub fn apply_monitor_rule(name: &str, res_hz: &str, scale: f64) {
     let _ = Command::new("hyprctl")
         .args(["keyword", "monitor", &rule])
         .spawn();
+}
+
+pub fn set_monitor_mode(name: &str, mode: &str) {
+    let monitors = get_monitors();
+    let scale = monitors.iter().find(|m| m.name == name).map(|m| m.scale).unwrap_or(1.0);
+    apply_monitor_rule(name, mode, scale);
+}
+
+pub fn set_monitor_scale(name: &str, scale: f64) {
+    let monitors = get_monitors();
+    let mode = monitors.iter().find(|m| m.name == name)
+        .map(|m| format!("{}x{}@{:.2}Hz", m.width, m.height, m.refresh_rate))
+        .unwrap_or_else(|| "preferred".to_string());
+    apply_monitor_rule(name, &mode, scale);
 }

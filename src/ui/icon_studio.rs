@@ -43,7 +43,7 @@ pub fn build_icon_studio_page(tr: &Translations) -> PreferencesPage {
     // ========================================================
     let group_bar = PreferencesGroup::builder()
         .title(&tr.icons_module_icons)
-        .description("Pas de iconen en emoji's van de statusbalkmodules aan (ook Nerd Font glyphs ondersteund)")
+        .description(&tr.icons_bar_desc)
         .build();
 
     group_bar.add(&create_icon_row(
@@ -241,7 +241,7 @@ pub fn build_icon_studio_page(tr: &Translations) -> PreferencesPage {
     // ========================================================
     let group_cc = PreferencesGroup::builder()
         .title(&tr.icons_card_icons)
-        .description("Iconen voor Control Center widgets en mediaspeler bediening")
+        .description(&tr.icons_cc_desc)
         .build();
 
     group_cc.add(&create_icon_row(

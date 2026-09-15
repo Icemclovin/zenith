@@ -181,6 +181,7 @@ pub fn extract_palette(image_path: &str) -> Option<WallpaperPalette> {
 }
 
 pub fn apply_palette(palette: &WallpaperPalette) {
+    // 1. Update zenith-shell.json voor Quickshell
     let mut cfg = ZenithShellConfig::load_or_default();
     cfg.styling.background = palette.background.clone();
     cfg.styling.accent = palette.primary_accent.clone();
@@ -189,8 +190,27 @@ pub fn apply_palette(palette: &WallpaperPalette) {
     cfg.styling.pill_bg = palette.surface.clone();
     let _ = cfg.save();
 
+    // 2. Update Hyprland live borderkleur
     let border_hex = palette.primary_accent.trim_start_matches('#');
     crate::backend::hyprland::set_active_border_color(border_hex);
+
+    // 3. Update en sla op in zenith.conf (Hyprland persistente configuratie)
+    let mut hypr_cfg = crate::backend::config::load_config();
+    hypr_cfg.active_border_color = border_hex.to_string();
+    hypr_cfg.qs_bg = palette.background.trim_start_matches('#').to_string();
+    hypr_cfg.qs_accent = palette.primary_accent.trim_start_matches('#').to_string();
+    hypr_cfg.qs_border_color = palette.surface.trim_start_matches('#').to_string();
+    hypr_cfg.qs_text_color = palette.foreground.trim_start_matches('#').to_string();
+    hypr_cfg.qs_pill_bg = palette.surface.trim_start_matches('#').to_string();
+    crate::backend::config::save_config(&hypr_cfg);
+
+    // 4. Update Kitty en Rofi thema's
+    crate::backend::themes::update_kitty(&palette.background, &palette.foreground, 0.95, 11.5);
+    crate::backend::themes::update_rofi(&palette.background, &palette.foreground, 0.95, 12);
+
+    // 5. Synchroniseer Quickshell en herlaad thema's live
+    crate::backend::themes::sync_shell_config(&cfg);
+    crate::backend::themes::update_quickshell(&hypr_cfg);
 }
 
 #[cfg(test)]

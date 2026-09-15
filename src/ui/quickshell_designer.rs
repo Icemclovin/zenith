@@ -8,16 +8,17 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::config::{self, ZenithConfig};
+use crate::backend::i18n::Translations;
 use crate::backend::shell_config::{CustomScriptModule, ZenithShellConfig};
 use crate::backend::{process, themes};
 
-pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
+pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> PreferencesPage {
     let page = PreferencesPage::new();
     let shell_state = Rc::new(RefCell::new(ZenithShellConfig::load_or_default()));
 
     // 1. Thema Presets (1-Klik Stijlen)
     let group_presets = PreferencesGroup::builder()
-        .title("Thema Presets (1-Klik Stijlen)")
+        .title(&tr.bar_preset_theme)
         .description("Pas direct een complete vooraf ontworpen balkstijl en module-indeling toe")
         .build();
 
@@ -35,7 +36,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
         "⚡ Compact Edge (Bovenaan schermbreed & strak)",
     ]);
     let dd_preset = DropDown::builder().model(&preset_model).valign(gtk4::Align::Center).build();
-    let btn_apply_preset = Button::builder().label("Toepassen").valign(gtk4::Align::Center).build();
+    let btn_apply_preset = Button::builder().label(&tr.bar_apply_preset).valign(gtk4::Align::Center).build();
 
     // Boxed list containers for modules
     let list_box_left = ListBox::builder().selection_mode(gtk4::SelectionMode::None).css_classes(["boxed-list"]).build();
@@ -273,7 +274,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
 
     // Subgroep: Links
     let group_mod_left = PreferencesGroup::builder()
-        .title("Linker Modules")
+        .title(&tr.bar_left_modules)
         .description("Modules aan de linkerzijde van de statusbalk")
         .build();
     group_mod_left.add(&*list_left_rc);
@@ -282,7 +283,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
 
     // Subgroep: Midden
     let group_mod_center = PreferencesGroup::builder()
-        .title("Midden Modules")
+        .title(&tr.bar_center_modules)
         .description("Modules gecentreerd op de statusbalk")
         .build();
     group_mod_center.add(&*list_center_rc);
@@ -291,7 +292,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
 
     // Subgroep: Rechts
     let group_mod_right = PreferencesGroup::builder()
-        .title("Rechter Modules")
+        .title(&tr.bar_right_modules)
         .description("Modules aan de rechterzijde van de statusbalk")
         .build();
     group_mod_right.add(&*list_right_rc);
@@ -305,7 +306,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
     // 3. Custom Commando / Script Modules Studio
     // ========================================================
     let group_custom_scripts = PreferencesGroup::builder()
-        .title("Custom Commando / Script Modules Studio")
+        .title(&tr.bar_custom_script)
         .description("Maak en beheer eigen statusbalk-modules op basis van bash-commando's zonder QML te hoeven schrijven")
         .build();
 
@@ -471,7 +472,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
     // 4. Geometrie & Positie
     // ========================================================
     let group_geom = PreferencesGroup::builder()
-        .title("Balkstijl & Geometrie")
+        .title(&tr.bar_styling)
         .description("Afmetingen, architectuur, afronding en zwevende marges")
         .build();
 
@@ -479,7 +480,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
 
     // Balk Architectuur
     let row_style = ActionRow::builder()
-        .title("Balk Architectuur")
+        .title(&tr.bar_style)
         .subtitle("Kies tussen één doorlopende balk (Unified), losse eilanden (Islands) of Minimal")
         .build();
     let style_model = StringList::new(&["Eén Geheel (Unified)", "Losse Eilanden (Islands)", "Minimalistisch (Minimal)"]);
@@ -500,7 +501,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
     group_geom.add(&row_style);
 
     // Positie
-    let row_pos = ActionRow::builder().title("Positie op Scherm").build();
+    let row_pos = ActionRow::builder().title(&tr.bar_position).build();
     let pos_model = StringList::new(&["Bovenaan (top)", "Onderaan (bottom)", "Links (left)", "Rechts (right)"]);
     let dd_pos = DropDown::builder().model(&pos_model).valign(gtk4::Align::Center).build();
     dd_pos.set_selected(match initial_sh.layout.position.as_str() {
@@ -530,7 +531,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
 
     // Hoogte
     let row_h = ActionRow::builder()
-        .title("Balk Hoogte")
+        .title(&tr.bar_height)
         .subtitle(&format!("{} px", initial_sh.layout.height))
         .build();
     let s_h = Scale::with_range(Orientation::Horizontal, 20.0, 64.0, 2.0);
@@ -554,7 +555,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPa
 
     // Zwevende Modus
     let row_flt = ActionRow::builder()
-        .title("Zwevende Balk (Floating)")
+        .title(&tr.bar_floating)
         .subtitle("Balk losmaken van de beeldschermrand met marges")
         .build();
     let sw_flt = Switch::builder().active(initial_sh.layout.floating).valign(gtk4::Align::Center).build();

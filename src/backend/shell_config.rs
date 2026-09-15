@@ -241,6 +241,81 @@ impl Default for OsdConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct LockscreenConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_ls_layout")]
+    pub layout_preset: String, // "centered" | "left_aligned" | "split" | "free_canvas"
+    #[serde(default = "default_ls_bg_mode")]
+    pub background_mode: String, // "wallpaper_blur" | "custom_image" | "solid_black" | "transparent_acrylic"
+    #[serde(default)]
+    pub custom_image_path: Option<String>,
+    #[serde(default = "default_ls_blur_radius")]
+    pub blur_radius: u32,
+    #[serde(default = "default_ls_dim_opacity")]
+    pub dim_opacity: f64,
+    #[serde(default = "default_ls_clock_format")]
+    pub clock_format: String,
+    #[serde(default = "default_ls_clock_font_size")]
+    pub clock_font_size: u32,
+    #[serde(default = "default_ls_clock_font_family")]
+    pub clock_font_family: String,
+    #[serde(default)]
+    pub user_avatar_path: Option<String>,
+    #[serde(default = "default_ls_greeting")]
+    pub custom_greeting: String,
+    #[serde(default = "default_ls_auth_icon")]
+    pub auth_indicator_icon: String,
+    #[serde(default = "default_true")]
+    pub auth_shake_animation: bool,
+    #[serde(default = "default_ls_cards")]
+    pub cards: Vec<String>,
+    #[serde(default)]
+    pub custom_scripts: Vec<CustomScriptModule>,
+}
+
+fn default_ls_layout() -> String { "centered".to_string() }
+fn default_ls_bg_mode() -> String { "wallpaper_blur".to_string() }
+fn default_ls_blur_radius() -> u32 { 32 }
+fn default_ls_dim_opacity() -> f64 { 0.45 }
+fn default_ls_clock_format() -> String { "hh:mm".to_string() }
+fn default_ls_clock_font_size() -> u32 { 72 }
+fn default_ls_clock_font_family() -> String { "JetBrains Mono".to_string() }
+fn default_ls_greeting() -> String { "Welkom terug, {user}".to_string() }
+fn default_ls_auth_icon() -> String { "🔒".to_string() }
+fn default_ls_cards() -> Vec<String> {
+    vec![
+        "clock".to_string(),
+        "avatar".to_string(),
+        "auth".to_string(),
+        "mpris".to_string(),
+        "battery_network".to_string(),
+    ]
+}
+
+impl Default for LockscreenConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            layout_preset: default_ls_layout(),
+            background_mode: default_ls_bg_mode(),
+            custom_image_path: None,
+            blur_radius: default_ls_blur_radius(),
+            dim_opacity: default_ls_dim_opacity(),
+            clock_format: default_ls_clock_format(),
+            clock_font_size: default_ls_clock_font_size(),
+            clock_font_family: default_ls_clock_font_family(),
+            user_avatar_path: None,
+            custom_greeting: default_ls_greeting(),
+            auth_indicator_icon: default_ls_auth_icon(),
+            auth_shake_animation: true,
+            cards: default_ls_cards(),
+            custom_scripts: Vec::new(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct CustomScriptModule {
     pub id: String,
     pub name: String,
@@ -365,6 +440,8 @@ pub struct ZenithShellConfig {
     pub wallpaper_path: String,
     #[serde(default)]
     pub custom_icons: CustomIcons,
+    #[serde(default)]
+    pub lockscreen: LockscreenConfig,
 }
 
 impl Default for ZenithShellConfig {
@@ -382,6 +459,7 @@ impl Default for ZenithShellConfig {
             auto_palette: false,
             wallpaper_path: String::new(),
             custom_icons: CustomIcons::default(),
+            lockscreen: LockscreenConfig::default(),
         }
     }
 }
@@ -724,6 +802,110 @@ impl ZenithShellConfig {
         }
         list
     }
+
+    pub fn lockscreen_cards_dir() -> Option<PathBuf> {
+        let home = std::env::var("HOME").ok()?;
+        Some(PathBuf::from(home).join(".config/quickshell/lockscreen_cards"))
+    }
+
+    /// Geeft alle beschikbare kaarten voor het Lockscreen (standaard, custom .qml en scripts)
+    pub fn discover_available_lockscreen_cards() -> Vec<ModuleInfo> {
+        let cfg = Self::load_or_default();
+        let mut list = vec![
+            ModuleInfo {
+                id: "clock".to_string(),
+                name: "Klok & Datum".to_string(),
+                icon: cfg.custom_icons.clock.clone(),
+                description: "Elegante tijd-, dag- en datumweergave".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "auth".to_string(),
+                name: "Authenticatie Box".to_string(),
+                icon: cfg.custom_icons.lock.clone(),
+                description: "Wachtwoordinvoer met PAM verificatie en animaties".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "avatar".to_string(),
+                name: "Profielfoto & Welkom".to_string(),
+                icon: "👤".to_string(),
+                description: "Gebruikersavatar met begroeting".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "mpris".to_string(),
+                name: "Mediaspeler".to_string(),
+                icon: cfg.custom_icons.media.clone(),
+                description: "Huidig spelend nummer met cover art en controls".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "battery_network".to_string(),
+                name: "Status Indicator".to_string(),
+                icon: cfg.custom_icons.battery_full.clone(),
+                description: "Batterij-, netwerk- en caps-lock status".to_string(),
+                is_custom: false,
+            },
+        ];
+
+        // Ontdek custom kaarten in ~/.config/quickshell/lockscreen_cards/*.qml
+        if let Some(dir) = Self::lockscreen_cards_dir() {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() && path.extension().map_or(false, |ext| ext == "qml") {
+                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            let card_stem = stem.strip_suffix("_card").unwrap_or(stem);
+                            if !list.iter().any(|m| m.id == card_stem || m.id == stem) {
+                                list.push(ModuleInfo {
+                                    id: stem.to_string(),
+                                    name: format!("✨ Custom: {}", stem),
+                                    icon: cfg.custom_icons.custom.clone(),
+                                    description: format!("Aangepaste Lockscreen kaart: {}.qml", stem),
+                                    is_custom: true,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Voeg custom scripts toe
+        for script in &cfg.lockscreen.custom_scripts {
+            let script_id = format!("script:{}", script.id);
+            if !list.iter().any(|m| m.id == script_id) {
+                list.push(ModuleInfo {
+                    id: script_id,
+                    name: format!("💻 Script: {}", script.name),
+                    icon: script.icon.clone(),
+                    description: format!("`{}` (elke {}s)", script.command, script.interval_seconds),
+                    is_custom: true,
+                });
+            }
+        }
+
+        list
+    }
+
+    /// Geeft alle lockscreen kaarten inclusief de custom scripts voor deze instantie
+    pub fn discover_lockscreen_cards_for_instance(&self) -> Vec<ModuleInfo> {
+        let mut list = Self::discover_available_lockscreen_cards();
+        for script in &self.lockscreen.custom_scripts {
+            let script_id = format!("script:{}", script.id);
+            if !list.iter().any(|m| m.id == script_id) {
+                list.push(ModuleInfo {
+                    id: script_id,
+                    name: format!("💻 Script: {}", script.name),
+                    icon: script.icon.clone(),
+                    description: format!("`{}` (elke {}s)", script.command, script.interval_seconds),
+                    is_custom: true,
+                });
+            }
+        }
+        list
+    }
 }
 
 #[cfg(test)]
@@ -848,6 +1030,53 @@ mod tests {
         assert_eq!(parsed.custom_icons.volume_high, "󰕾");
         assert_eq!(parsed.language, "en");
         assert!(parsed.auto_palette);
+    }
+
+    #[test]
+    fn test_lockscreen_config() {
+        let mut cfg = ZenithShellConfig::default();
+        assert!(cfg.lockscreen.enabled);
+        assert_eq!(cfg.lockscreen.layout_preset, "centered");
+        assert_eq!(cfg.lockscreen.blur_radius, 32);
+        assert_eq!(cfg.lockscreen.clock_font_size, 72);
+        assert_eq!(cfg.lockscreen.auth_indicator_icon, "🔒");
+
+        cfg.lockscreen.layout_preset = "split".to_string();
+        cfg.lockscreen.blur_radius = 48;
+        cfg.lockscreen.dim_opacity = 0.60;
+        cfg.lockscreen.clock_format = "hh:mm:ss".to_string();
+        cfg.lockscreen.clock_font_size = 96;
+        cfg.lockscreen.auth_indicator_icon = "🔑".to_string();
+        cfg.lockscreen.custom_scripts.push(CustomScriptModule {
+            id: "ls_script".to_string(),
+            name: "Lock Notice".to_string(),
+            icon: "ℹ️".to_string(),
+            command: "echo 'Security Notice'".to_string(),
+            interval_seconds: 60,
+            on_click: None,
+        });
+
+        let json = serde_json::to_string_pretty(&cfg).expect("Serialization failed");
+        let parsed: ZenithShellConfig = serde_json::from_str(&json).expect("Deserialization failed");
+        assert_eq!(parsed.lockscreen.layout_preset, "split");
+        assert_eq!(parsed.lockscreen.blur_radius, 48);
+        assert_eq!(parsed.lockscreen.dim_opacity, 0.60);
+        assert_eq!(parsed.lockscreen.clock_format, "hh:mm:ss");
+        assert_eq!(parsed.lockscreen.clock_font_size, 96);
+        assert_eq!(parsed.lockscreen.auth_indicator_icon, "🔑");
+        assert_eq!(parsed.lockscreen.custom_scripts.len(), 1);
+        assert_eq!(parsed.lockscreen.custom_scripts[0].name, "Lock Notice");
+    }
+
+    #[test]
+    fn test_discover_available_lockscreen_cards() {
+        let cards = ZenithShellConfig::discover_available_lockscreen_cards();
+        assert!(!cards.is_empty());
+        assert!(cards.iter().any(|c| c.id == "clock"));
+        assert!(cards.iter().any(|c| c.id == "auth"));
+        assert!(cards.iter().any(|c| c.id == "avatar"));
+        assert!(cards.iter().any(|c| c.id == "mpris"));
+        assert!(cards.iter().any(|c| c.id == "battery_network"));
     }
 }
 

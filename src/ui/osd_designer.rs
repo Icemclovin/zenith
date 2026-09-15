@@ -8,10 +8,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::config::ZenithConfig;
+use crate::backend::i18n::Translations;
 use crate::backend::shell_config::ZenithShellConfig;
 use crate::backend::themes;
 
-pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
+pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> PreferencesPage {
     let page = PreferencesPage::new();
     let shell_state = Rc::new(RefCell::new(ZenithShellConfig::load_or_default()));
 
@@ -19,13 +20,13 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
     // 1. OSD Weergave & Vormgeving
     // ==========================================
     let group_style = PreferencesGroup::builder()
-        .title("On-Screen Display (OSD) Stijl & Afmetingen")
+        .title("On-Screen Display (OSD)")
         .description("Pas de zwevende overlay-notificaties voor volume en helderheid aan")
         .build();
 
     // Toggle Ingeschakeld
     let row_enabled = ActionRow::builder()
-        .title("OSD Ingeschakeld")
+        .title(&tr.osd_enabled)
         .subtitle("Toon interactieve overlays bij het wijzigen van volume of helderheid")
         .build();
     let sw_enabled = Switch::builder().active(shell_state.borrow().osd.enabled).valign(gtk4::Align::Center).build();
@@ -42,7 +43,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
 
     // Positie
     let row_pos = ActionRow::builder()
-        .title("Schermpositie")
+        .title(&tr.osd_position)
         .subtitle("Kies waar de OSD op het beeldscherm verschijnt")
         .build();
     let pos_model = StringList::new(&[
@@ -82,7 +83,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
 
     // Oriëntatie
     let row_orient = ActionRow::builder()
-        .title("Oriëntatie")
+        .title(&tr.osd_orientation)
         .subtitle("Horizontale capsule of verticale slider")
         .build();
     let orient_model = StringList::new(&["Horizontale Capsule", "Verticale Slider"]);
@@ -103,7 +104,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
     // Breedte Slider
     let initial_width = shell_state.borrow().osd.width;
     let row_width = ActionRow::builder()
-        .title("Breedte / Lengte")
+        .title(&tr.osd_width)
         .subtitle(&format!("{} px", initial_width))
         .build();
     let s_width = Scale::with_range(Orientation::Horizontal, 160.0, 500.0, 10.0);
@@ -126,7 +127,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
     // Hoogte / Dikte Slider
     let initial_height = shell_state.borrow().osd.height;
     let row_height = ActionRow::builder()
-        .title("Hoogte / Dikte")
+        .title(&tr.osd_height)
         .subtitle(&format!("{} px", initial_height))
         .build();
     let s_height = Scale::with_range(Orientation::Horizontal, 32.0, 100.0, 4.0);
@@ -149,7 +150,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
     // Weergaveduur (Timeout)
     let initial_timeout = shell_state.borrow().osd.timeout_ms;
     let row_timeout = ActionRow::builder()
-        .title("Weergaveduur (Timeout)")
+        .title(&tr.osd_timeout)
         .subtitle(&format!("{} ms", initial_timeout))
         .build();
     let s_timeout = Scale::with_range(Orientation::Horizontal, 500.0, 5000.0, 250.0);
@@ -171,7 +172,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
 
     // Percentage tonen
     let row_pct = ActionRow::builder()
-        .title("Percentage Weergeven")
+        .title(&tr.osd_percentage)
         .subtitle("Toon het numerieke percentage naast de voortgangsbalk")
         .build();
     let sw_pct = Switch::builder().active(shell_state.borrow().osd.show_percentage).valign(gtk4::Align::Center).build();
@@ -188,7 +189,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
 
     // Icoon tonen
     let row_ico = ActionRow::builder()
-        .title("Icoon Weergeven")
+        .title(&tr.osd_icon)
         .subtitle("Toon het relevante hardware-icoon in de capsule")
         .build();
     let sw_ico = Switch::builder().active(shell_state.borrow().osd.show_icon).valign(gtk4::Align::Center).build();
@@ -209,7 +210,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
     // 2. Hardware Doelen (Triggers)
     // ==========================================
     let group_targets = PreferencesGroup::builder()
-        .title("Hardware Triggers & Doelen")
+        .title(&tr.osd_hardware)
         .description("Kies voor welke hardware-wijzigingen de OSD geactiveerd wordt")
         .build();
 
@@ -291,7 +292,7 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
     // 3. Live Test Knoppen
     // ==========================================
     let group_test = PreferencesGroup::builder()
-        .title("Live OSD Testen")
+        .title(&tr.osd_test)
         .description("Test de live weergave van de OSD via Quickshell IPC")
         .build();
 

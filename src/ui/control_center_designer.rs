@@ -8,10 +8,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::config::ZenithConfig;
+use crate::backend::i18n::Translations;
 use crate::backend::shell_config::{CustomScriptModule, ZenithShellConfig};
 use crate::backend::themes;
 
-pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> PreferencesPage {
+pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> PreferencesPage {
     let page = PreferencesPage::new();
     let shell_state = Rc::new(RefCell::new(ZenithShellConfig::load_or_default()));
 
@@ -19,13 +20,13 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
     // 1. Layout & Afmetingen
     // ==========================================
     let group_appearance = PreferencesGroup::builder()
-        .title("Control Center Weergave & Afmetingen")
+        .title("Control Center")
         .description("Pas de positie, afmetingen en achtergrondstijl van het paneel aan")
         .build();
 
     // Toggle Ingeschakeld
     let row_enabled = ActionRow::builder()
-        .title("Control Center Ingeschakeld")
+        .title(&tr.cc_enabled)
         .subtitle("Schakel het popup-bedieningspaneel in of uit")
         .build();
     let sw_enabled = Switch::builder().active(shell_state.borrow().control_center.enabled).valign(gtk4::Align::Center).build();
@@ -42,7 +43,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
 
     // Positie op Scherm
     let row_pos = ActionRow::builder()
-        .title("Schermpositie")
+        .title(&tr.cc_position)
         .subtitle("Kies de hoek of positie waarin het Control Center verschijnt")
         .build();
     let pos_model = StringList::new(&[
@@ -83,7 +84,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
     // Breedte Slider
     let initial_width = shell_state.borrow().control_center.width;
     let row_width = ActionRow::builder()
-        .title("Breedte Paneel")
+        .title(&tr.cc_width)
         .subtitle(&format!("{} px", initial_width))
         .build();
     let s_width = Scale::with_range(Orientation::Horizontal, 280.0, 600.0, 10.0);
@@ -106,7 +107,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
     // Maximale Hoogte Slider
     let initial_max_h = shell_state.borrow().control_center.max_height;
     let row_max_h = ActionRow::builder()
-        .title("Maximale Hoogte")
+        .title(&tr.cc_max_height)
         .subtitle(&format!("{} px", initial_max_h))
         .build();
     let s_max_h = Scale::with_range(Orientation::Horizontal, 300.0, 900.0, 20.0);
@@ -129,7 +130,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
     // Venster Afronding
     let initial_rad = shell_state.borrow().control_center.border_radius;
     let row_rad = ActionRow::builder()
-        .title("Venster Afronding")
+        .title(&tr.cc_border_radius)
         .subtitle(&format!("{} px", initial_rad))
         .build();
     let s_rad = Scale::with_range(Orientation::Horizontal, 0.0, 32.0, 1.0);
@@ -152,7 +153,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
     // Dekking (Opacity)
     let initial_op = shell_state.borrow().control_center.opacity;
     let row_op = ActionRow::builder()
-        .title("Achtergrond Dekking")
+        .title(&tr.cc_opacity)
         .subtitle(&format!("{}%", (initial_op * 100.0).round() as i32))
         .build();
     let s_op = Scale::with_range(Orientation::Horizontal, 0.40, 1.00, 0.02);
@@ -174,7 +175,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
 
     // Achtergrondvervaging (Blur Behind)
     let row_blur = ActionRow::builder()
-        .title("Achtergrondvervaging (Blur Behind)")
+        .title(&tr.cc_blur)
         .subtitle("Schakel Wayland compositor blur achter het venster in")
         .build();
     let sw_blur = Switch::builder().active(shell_state.borrow().control_center.blur_behind).valign(gtk4::Align::Center).build();
@@ -195,7 +196,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
     // 2. Actieve Kaarten Grid & Volgorde
     // ==========================================
     let group_cards = PreferencesGroup::builder()
-        .title("Actieve Kaarten in Control Center")
+        .title(&tr.cc_cards)
         .description("Sorteer, verwijder of voeg interactieve widgets toe")
         .build();
 
@@ -271,7 +272,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
     // 3. Custom Script Kaart Studio
     // ==========================================
     let group_custom_card = PreferencesGroup::builder()
-        .title("+ Voeg Eigen Script-Kaart Toe (Zero-Code Studio)")
+        .title(&tr.cc_custom_card)
         .description("Koppel een bash-commando aan een interactieve tegel in het Control Center")
         .build();
 
@@ -306,7 +307,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>) -> Preferen
     row_click.add_suffix(&entry_card_click);
     group_custom_card.add(&row_click);
 
-    let btn_create_card = Button::builder().label("💾 Kaart Opslaan & Toevoegen").valign(gtk4::Align::Center).build();
+    let btn_create_card = Button::builder().label(&tr.cc_create_card).valign(gtk4::Align::Center).build();
     btn_create_card.add_css_class("suggested-action");
     {
         let sh_st = Rc::clone(&shell_state);

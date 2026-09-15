@@ -21,7 +21,123 @@ pub fn build_window(app: &Application) {
 
     let shell_cfg = ZenithShellConfig::load_or_default();
     let lang = i18n::Language::from_str(&shell_cfg.language).unwrap_or(i18n::Language::Nl);
-    let tr = i18n::get_translations(&lang);
+
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title("Zenith")
+        .default_width(940)
+        .default_height(700)
+        .build();
+
+    let root_box = build_window_content(&window, app, &state, &lang, "dashboard");
+    window.set_content(Some(&root_box));
+    window.present();
+}
+
+fn is_valid_image(path: &str) -> bool {
+    let p = std::path::Path::new(path);
+    if !p.exists() || !p.is_file() {
+        return false;
+    }
+    if let Ok(meta) = p.metadata() {
+        if meta.len() < 1024 {
+            return false;
+        }
+    }
+    image::image_dimensions(p).is_ok()
+}
+
+/// Helper om het huidige actieve wallpaper-bestand te detecteren
+fn detect_current_wallpaper() -> Option<String> {
+    let scfg = ZenithShellConfig::load_or_default();
+    if !scfg.wallpaper_path.is_empty() && is_valid_image(&scfg.wallpaper_path) {
+        return Some(scfg.wallpaper_path);
+    }
+
+    // Try to find the wallpaper from a running swaybg process
+    if let Ok(output) = std::process::Command::new("pgrep").args(["-a", "swaybg"]).output() {
+        if let Ok(text) = String::from_utf8(output.stdout) {
+            // Format: "PID swaybg -i /path/to/img -m fill"
+            for line in text.lines() {
+                if let Some(idx) = line.find("-i ") {
+                    let rest = &line[idx + 3..];
+                    let path = rest.split_whitespace().next().unwrap_or("");
+                    if is_valid_image(path) {
+                        return Some(path.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: pick the first valid image from ~/Pictures/Wallpapers
+    if let Ok(home) = std::env::var("HOME") {
+        let wp_dir = std::path::PathBuf::from(home).join("Pictures/Wallpapers");
+        if let Ok(entries) = std::fs::read_dir(wp_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if let Some(p_str) = p.to_str() {
+                    if is_valid_image(p_str) {
+                        return Some(p_str.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // System wallpapers
+    for sys_wp in &["/usr/share/hypr/wall2.png", "/usr/share/hypr/wall1.png", "/usr/share/hypr/wall0.png"] {
+        if is_valid_image(sys_wp) {
+            return Some(sys_wp.to_string());
+        }
+    }
+
+    None
+}
+
+fn update_swatches_chips(swatch_box: &Box, bg: &str, surface: &str, accent: &str, border: &str, fg: &str) {
+    while let Some(child) = swatch_box.first_child() {
+        swatch_box.remove(&child);
+    }
+    let swatches_info = [
+        ("Background", bg),
+        ("Surface", surface),
+        ("Primary Accent", accent),
+        ("Border", border),
+        ("Foreground", fg),
+    ];
+    for (role, hex) in swatches_info {
+        let chip = Label::builder()
+            .label(&format!(" {} ", hex))
+            .tooltip_text(role)
+            .valign(gtk4::Align::Center)
+            .build();
+        let fg_col = if hex.starts_with("#1") || hex.starts_with("#2") || hex.starts_with("#0") || hex.starts_with("#3") {
+            "#cdd6f4"
+        } else {
+            "#11111b"
+        };
+        let prov = gtk4::CssProvider::new();
+        prov.load_from_data(&format!(
+            "label {{ background-color: {}; color: {}; font-weight: bold; font-size: 10px; border-radius: 6px; padding: 4px 6px; border: 1px solid #45475a; }}",
+            hex, fg_col
+        ));
+        #[allow(deprecated)]
+        chip.style_context().add_provider(&prov, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        swatch_box.append(&chip);
+    }
+}
+
+fn build_window_content(
+    window: &ApplicationWindow,
+    app: &Application,
+    state: &Rc<RefCell<config::ZenithConfig>>,
+    lang: &i18n::Language,
+    active_tab: &str,
+) -> Box {
+    let tr = i18n::get_translations(lang);
+    let initial_cfg = state.borrow().clone();
+    let shell_cfg = ZenithShellConfig::load_or_default();
 
     let root_box = Box::new(Orientation::Horizontal, 0);
 
@@ -68,17 +184,20 @@ pub fn build_window(app: &Application) {
         qs_pill.set_css_classes(&["status-pill-inactive"]);
     }
 
-    let pill_clone = qs_pill.clone();
+    let pill_weak = qs_pill.downgrade();
     let status_active = tr.status_active.clone();
     let status_inactive = tr.status_inactive.clone();
     gtk4::glib::timeout_add_local(std::time::Duration::from_millis(2000), move || {
+        let Some(pill) = pill_weak.upgrade() else {
+            return gtk4::glib::ControlFlow::Break;
+        };
         let running = process::is_process_running("quickshell");
         if running {
-            pill_clone.set_label(&format!("● {}", status_active));
-            pill_clone.set_css_classes(&["status-pill-active"]);
+            pill.set_label(&format!("● {}", status_active));
+            pill.set_css_classes(&["status-pill-active"]);
         } else {
-            pill_clone.set_label(&format!("○ {}", status_inactive));
-            pill_clone.set_css_classes(&["status-pill-inactive"]);
+            pill.set_label(&format!("○ {}", status_inactive));
+            pill.set_css_classes(&["status-pill-inactive"]);
         }
         gtk4::glib::ControlFlow::Continue
     });
@@ -104,8 +223,10 @@ pub fn build_window(app: &Application) {
         NavItem { id: "statusbar", title: tr.sidebar_statusbar.clone(), icon: "utilities-terminal-symbolic" },
         NavItem { id: "control_center", title: tr.sidebar_control_center.clone(), icon: "preferences-desktop-keyboard-shortcuts-symbolic" },
         NavItem { id: "osd", title: tr.sidebar_osd.clone(), icon: "video-display-symbolic" },
+        NavItem { id: "lockscreen", title: tr.sidebar_lockscreen.clone(), icon: "system-lock-screen-symbolic" },
         NavItem { id: "themes", title: tr.sidebar_themes.clone(), icon: "applications-accessories-symbolic" },
         NavItem { id: "icons", title: tr.icons_title.clone(), icon: "emblem-favorite-symbolic" },
+        NavItem { id: "fastfetch", title: tr.sidebar_fastfetch.clone(), icon: "utilities-terminal-symbolic" },
         NavItem { id: "system", title: tr.sidebar_system.clone(), icon: "emblem-system-symbolic" },
     ];
 
@@ -136,48 +257,6 @@ pub fn build_window(app: &Application) {
 
     sidebar.append(&nav_list);
 
-    // Language Selector
-    let lang_box = Box::new(Orientation::Horizontal, 8);
-    lang_box.set_margin_top(12);
-    lang_box.set_margin_start(12);
-    lang_box.set_margin_end(12);
-    let lang_label = Label::builder().label(&tr.lang_select).halign(gtk4::Align::Start).hexpand(true).build();
-    let lang_model = StringList::new(&["Nederlands", "English", "Deutsch", "Español"]);
-    let lang_drop = DropDown::builder().model(&lang_model).build();
-    lang_drop.set_selected(match lang {
-        i18n::Language::Nl => 0,
-        i18n::Language::En => 1,
-        i18n::Language::De => 2,
-        i18n::Language::Es => 3,
-    });
-    lang_drop.connect_selected_notify(move |dd| {
-        let lang_str = match dd.selected() {
-            1 => "en",
-            2 => "de",
-            3 => "es",
-            _ => "nl",
-        };
-        let mut scfg = ZenithShellConfig::load_or_default();
-        scfg.language = lang_str.to_string();
-        let _ = scfg.save();
-    });
-    lang_box.append(&lang_label);
-    lang_box.append(&lang_drop);
-    sidebar.append(&lang_box);
-
-    let spacer = Box::new(Orientation::Vertical, 0);
-    spacer.set_vexpand(true);
-    sidebar.append(&spacer);
-
-    let footer_lbl = Label::builder()
-        .label("Zenith v2.2 | Arch Linux")
-        .halign(gtk4::Align::Start)
-        .css_classes(["zenith-brand-sub"])
-        .build();
-    sidebar.append(&footer_lbl);
-
-    root_box.append(&sidebar);
-
     // ========================================================
     // Rechter Inhoud (HeaderBar + ViewStack)
     // ========================================================
@@ -200,6 +279,72 @@ pub fn build_window(app: &Application) {
     stack.set_vexpand(true);
     content_box.append(&stack);
 
+    // Language Selector (Direct live UI refresh zonder herstart!)
+    let lang_box = Box::new(Orientation::Horizontal, 8);
+    lang_box.set_margin_top(12);
+    lang_box.set_margin_start(12);
+    lang_box.set_margin_end(12);
+    let lang_label = Label::builder().label(&tr.lang_select).halign(gtk4::Align::Start).hexpand(true).build();
+    let lang_model = StringList::new(&["Nederlands", "English", "Deutsch", "Español"]);
+    let lang_drop = DropDown::builder().model(&lang_model).build();
+    lang_drop.set_selected(match lang {
+        i18n::Language::Nl => 0,
+        i18n::Language::En => 1,
+        i18n::Language::De => 2,
+        i18n::Language::Es => 3,
+    });
+
+    let win_weak = window.downgrade();
+    let app_clone = app.clone();
+    let state_clone = Rc::clone(state);
+    let stack_for_lang = stack.clone();
+
+    lang_drop.connect_selected_notify(move |dd| {
+        let lang_str = match dd.selected() {
+            1 => "en",
+            2 => "de",
+            3 => "es",
+            _ => "nl",
+        };
+
+        let mut scfg = ZenithShellConfig::load_or_default();
+        if scfg.language == lang_str {
+            return;
+        }
+        scfg.language = lang_str.to_string();
+        let _ = scfg.save();
+
+        let new_lang = i18n::Language::from_str(lang_str).unwrap_or(i18n::Language::Nl);
+        let win_weak_c = win_weak.clone();
+        let app_c = app_clone.clone();
+        let state_c = Rc::clone(&state_clone);
+        let stack_c = stack_for_lang.clone();
+
+        gtk4::glib::idle_add_local_once(move || {
+            if let Some(win) = win_weak_c.upgrade() {
+                let current_tab = stack_c.visible_child_name().unwrap_or_else(|| "dashboard".into());
+                let new_content = build_window_content(&win, &app_c, &state_c, &new_lang, current_tab.as_str());
+                win.set_content(Some(&new_content));
+            }
+        });
+    });
+
+    lang_box.append(&lang_label);
+    lang_box.append(&lang_drop);
+    sidebar.append(&lang_box);
+
+    let spacer = Box::new(Orientation::Vertical, 0);
+    spacer.set_vexpand(true);
+    sidebar.append(&spacer);
+
+    let footer_lbl = Label::builder()
+        .label("Zenith v2.2 | Arch Linux")
+        .halign(gtk4::Align::Start)
+        .css_classes(["zenith-brand-sub"])
+        .build();
+    sidebar.append(&footer_lbl);
+
+    root_box.append(&sidebar);
     root_box.append(&content_box);
 
     let stack_clone = stack.clone();
@@ -217,12 +362,12 @@ pub fn build_window(app: &Application) {
 
     let group_quick = PreferencesGroup::builder()
         .title(&tr.dash_quick_controls)
-        .description("Test en bedien Quickshell en Hyprland componenten direct")
+        .description(&tr.dash_quick_desc)
         .build();
 
     let row_cc_test = ActionRow::builder()
-        .title("Control Center Paneel")
-        .subtitle("Open of sluit het zwevende controlepaneel")
+        .title(&tr.dash_cc_title)
+        .subtitle(&tr.dash_cc_sub)
         .build();
     let btn_cc_test = Button::builder().label(&format!("🚀 {}", tr.dash_test_cc)).valign(gtk4::Align::Center).build();
     btn_cc_test.connect_clicked(|_| {
@@ -232,8 +377,8 @@ pub fn build_window(app: &Application) {
     group_quick.add(&row_cc_test);
 
     let row_osd_test = ActionRow::builder()
-        .title("OSD Notificatie Test")
-        .subtitle("Activeer de geanimeerde On-Screen Display popup")
+        .title(&tr.dash_osd_title)
+        .subtitle(&tr.dash_osd_sub)
         .build();
     let btn_osd_test = Button::builder().label(&format!("🔔 {}", tr.dash_test_osd)).valign(gtk4::Align::Center).build();
     btn_osd_test.connect_clicked(|_| {
@@ -243,8 +388,8 @@ pub fn build_window(app: &Application) {
     group_quick.add(&row_osd_test);
 
     let row_reload_hypr = ActionRow::builder()
-        .title("Hyprland Compositor")
-        .subtitle("Herlaad Hyprland window rules en configuratie")
+        .title(&tr.dash_hypr_title)
+        .subtitle(&tr.dash_hypr_sub)
         .build();
     let btn_reload_hypr = Button::builder().label(&format!("🔄 {}", tr.dash_reload_hypr)).valign(gtk4::Align::Center).build();
     btn_reload_hypr.connect_clicked(|_| {
@@ -254,8 +399,8 @@ pub fn build_window(app: &Application) {
     group_quick.add(&row_reload_hypr);
 
     let row_restart_bar = ActionRow::builder()
-        .title("Herstart Actieve Statusbalk")
-        .subtitle("Herstart Quickshell of Waybar daemon")
+        .title(&tr.dash_restart_bar)
+        .subtitle("Quickshell / Waybar daemon")
         .build();
     let btn_restart_bar = Button::builder().label(&format!("⚡ {}", tr.dash_restart_bar)).valign(gtk4::Align::Center).build();
     let st_rbar = Rc::clone(&state);
@@ -269,8 +414,8 @@ pub fn build_window(app: &Application) {
     page_dash.add(&group_quick);
 
     let group_dash_bar = PreferencesGroup::builder()
-        .title("Statusbalk & Achtergrond")
-        .description("Kies je actieve statusbar en bureaublad wallpaper")
+        .title(&tr.sidebar_statusbar)
+        .description(&tr.dash_quick_desc)
         .build();
 
     let bar_model_dash = StringList::new(&["Waybar", "Quickshell", "Geen"]);
@@ -285,22 +430,77 @@ pub fn build_window(app: &Application) {
     });
     group_dash_bar.add(&row_dash_bar);
 
-    let row_dash_wall = ActionRow::builder().title(tr.dash_wallpaper.as_str()).subtitle("Selecteer een achtergrondafbeelding").build();
-    let btn_dash_wall = Button::builder().label("Kies bestand...").valign(gtk4::Align::Center).build();
+    // Wallpaper Selector & Palette Hook
+    let current_wp = if !shell_cfg.wallpaper_path.is_empty() && is_valid_image(&shell_cfg.wallpaper_path) {
+        shell_cfg.wallpaper_path.clone()
+    } else {
+        detect_current_wallpaper().unwrap_or_default()
+    };
+    let row_dash_wall = ActionRow::builder()
+        .title(tr.dash_wallpaper.as_str())
+        .subtitle(if current_wp.is_empty() { &tr.dash_wallpaper_sub } else { &current_wp })
+        .build();
+
+    // ========================================================
+    // Wallpaper Palette Engine & Kleurenoverzicht
+    // ========================================================
+    let group_palette = PreferencesGroup::builder()
+        .title(&tr.palette_title)
+        .description(&tr.palette_desc)
+        .build();
+
+    let row_auto_pal = ActionRow::builder()
+        .title(&tr.palette_auto_sync)
+        .subtitle(&tr.palette_auto_sync_sub)
+        .build();
+    let sw_auto_pal = Switch::builder()
+        .active(shell_cfg.auto_palette)
+        .valign(gtk4::Align::Center)
+        .build();
+
+    // Live Kleurenoverzicht (Swatches)
+    let row_swatches = ActionRow::builder()
+        .title(&tr.palette_current)
+        .subtitle(&format!("Accent: {} • Achtergrond: {}", shell_cfg.styling.accent, shell_cfg.styling.background))
+        .build();
+
+    let swatch_box = Box::new(Orientation::Horizontal, 6);
+    update_swatches_chips(
+        &swatch_box,
+        &shell_cfg.styling.background,
+        &shell_cfg.styling.pill_bg,
+        &shell_cfg.styling.accent,
+        &shell_cfg.styling.border_color,
+        &shell_cfg.styling.text_color,
+    );
+    row_swatches.add_suffix(&swatch_box);
+
+    let btn_dash_wall = Button::builder().label(&tr.dash_choose_file).valign(gtk4::Align::Center).build();
+    let r_wall_dash = row_dash_wall.clone();
+    let r_sw_dash = row_swatches.clone();
+    let sw_box_dash = swatch_box.clone();
+    let choose_wall_title = tr.dash_choose_wallpaper_title.clone();
     btn_dash_wall.connect_clicked(move |_| {
-        let fd = FileDialog::builder().title("Kies achtergrond").build();
+        let fd = FileDialog::builder().title(&choose_wall_title).build();
+        let r_cl = r_wall_dash.clone();
+        let r_sw_cl = r_sw_dash.clone();
+        let sw_b_cl = sw_box_dash.clone();
         fd.open(None::<&gtk4::Window>, None::<&gtk4::gio::Cancellable>, move |res| {
             if let Ok(file) = res {
                 if let Some(path) = file.path() {
                     if let Some(p_str) = path.to_str() {
-                        hyprland::set_wallpaper(p_str);
-                        // Save wallpaper path and auto-extract palette if enabled
-                        let mut scfg = ZenithShellConfig::load_or_default();
-                        scfg.wallpaper_path = p_str.to_string();
-                        let _ = scfg.save();
-                        if scfg.auto_palette {
-                            if let Some(pal) = palette::extract_palette(p_str) {
-                                palette::apply_palette(&pal);
+                        if is_valid_image(p_str) {
+                            hyprland::set_wallpaper(p_str);
+                            r_cl.set_subtitle(p_str);
+                            let mut scfg = ZenithShellConfig::load_or_default();
+                            scfg.wallpaper_path = p_str.to_string();
+                            let _ = scfg.save();
+                            if scfg.auto_palette {
+                                if let Some(pal) = palette::extract_palette(p_str) {
+                                    palette::apply_palette(&pal);
+                                    r_sw_cl.set_subtitle(&format!("Accent: {} • Achtergrond: {}", pal.primary_accent, pal.background));
+                                    update_swatches_chips(&sw_b_cl, &pal.background, &pal.surface, &pal.primary_accent, &pal.surface, &pal.foreground);
+                                }
                             }
                         }
                     }
@@ -310,42 +510,94 @@ pub fn build_window(app: &Application) {
     });
     row_dash_wall.add_suffix(&btn_dash_wall);
     group_dash_bar.add(&row_dash_wall);
-
     page_dash.add(&group_dash_bar);
 
-    // Wallpaper Palette Engine
-    let group_palette = PreferencesGroup::builder()
-        .title(&tr.palette_title)
-        .description("Extraheer automatisch een kleurenschema uit je wallpaper")
-        .build();
-
-    let row_auto_pal = ActionRow::builder()
-        .title(&tr.palette_auto_sync)
-        .subtitle("Kleuren worden automatisch aangepast bij wallpaper-wijziging")
-        .build();
-    let sw_auto_pal = Switch::builder()
-        .active(shell_cfg.auto_palette)
-        .valign(gtk4::Align::Center)
-        .build();
+    let r_wall_auto = row_dash_wall.clone();
+    let r_sw_auto = row_swatches.clone();
+    let sw_box_auto = swatch_box.clone();
     sw_auto_pal.connect_active_notify(move |sw| {
         let mut scfg = ZenithShellConfig::load_or_default();
         scfg.auto_palette = sw.is_active();
-        let _ = scfg.save();
+
+        if sw.is_active() {
+            let target = if !scfg.wallpaper_path.is_empty() && is_valid_image(&scfg.wallpaper_path) {
+                Some(scfg.wallpaper_path.clone())
+            } else {
+                detect_current_wallpaper()
+            };
+            if let Some(wp) = target {
+                scfg.wallpaper_path = wp.clone();
+                let _ = scfg.save();
+                hyprland::set_wallpaper(&wp);
+                r_wall_auto.set_subtitle(&wp);
+                if let Some(pal) = palette::extract_palette(&wp) {
+                    palette::apply_palette(&pal);
+                    r_sw_auto.set_subtitle(&format!("Accent: {} • Achtergrond: {}", pal.primary_accent, pal.background));
+                    update_swatches_chips(&sw_box_auto, &pal.background, &pal.surface, &pal.primary_accent, &pal.surface, &pal.foreground);
+                }
+            } else {
+                let _ = scfg.save();
+            }
+        } else {
+            let _ = scfg.save();
+        }
     });
     row_auto_pal.add_suffix(&sw_auto_pal);
     group_palette.add(&row_auto_pal);
+    group_palette.add(&row_swatches);
 
     let row_gen_pal = ActionRow::builder()
         .title(&tr.palette_generate)
-        .subtitle("Analyseer de huidige wallpaper en genereer een kleurenpalet")
+        .subtitle(&tr.palette_gen_sub)
         .build();
-    let btn_gen_pal = Button::builder().label("🎨 Genereer").valign(gtk4::Align::Center).build();
-    btn_gen_pal.connect_clicked(|_| {
-        let scfg = ZenithShellConfig::load_or_default();
-        if !scfg.wallpaper_path.is_empty() {
-            if let Some(pal) = palette::extract_palette(&scfg.wallpaper_path) {
+    let btn_gen_pal = Button::builder().label(&tr.palette_gen_btn).valign(gtk4::Align::Center).build();
+    let r_sw_gen = row_swatches.clone();
+    let r_wall_gen = row_dash_wall.clone();
+    let sw_box_gen = swatch_box.clone();
+    let choose_wall_title_gen = tr.dash_choose_wallpaper_title.clone();
+    btn_gen_pal.connect_clicked(move |_| {
+        let mut scfg = ZenithShellConfig::load_or_default();
+        let target = if !scfg.wallpaper_path.is_empty() && is_valid_image(&scfg.wallpaper_path) {
+            Some(scfg.wallpaper_path.clone())
+        } else {
+            detect_current_wallpaper()
+        };
+
+        if let Some(wp) = target {
+            scfg.wallpaper_path = wp.clone();
+            let _ = scfg.save();
+            hyprland::set_wallpaper(&wp);
+            r_wall_gen.set_subtitle(&wp);
+            if let Some(pal) = palette::extract_palette(&wp) {
                 palette::apply_palette(&pal);
+                r_sw_gen.set_subtitle(&format!("Accent: {} • Achtergrond: {}", pal.primary_accent, pal.background));
+                update_swatches_chips(&sw_box_gen, &pal.background, &pal.surface, &pal.primary_accent, &pal.surface, &pal.foreground);
             }
+        } else {
+            let fd = FileDialog::builder().title(&choose_wall_title_gen).build();
+            let r_sw2 = r_sw_gen.clone();
+            let r_w2 = r_wall_gen.clone();
+            let sw_b2 = sw_box_gen.clone();
+            fd.open(None::<&gtk4::Window>, None::<&gtk4::gio::Cancellable>, move |res| {
+                if let Ok(file) = res {
+                    if let Some(path) = file.path() {
+                        if let Some(p_str) = path.to_str() {
+                            if is_valid_image(p_str) {
+                                hyprland::set_wallpaper(p_str);
+                                r_w2.set_subtitle(p_str);
+                                let mut scfg2 = ZenithShellConfig::load_or_default();
+                                scfg2.wallpaper_path = p_str.to_string();
+                                let _ = scfg2.save();
+                                if let Some(pal) = palette::extract_palette(p_str) {
+                                    palette::apply_palette(&pal);
+                                    r_sw2.set_subtitle(&format!("Accent: {} • Achtergrond: {}", pal.primary_accent, pal.background));
+                                    update_swatches_chips(&sw_b2, &pal.background, &pal.surface, &pal.primary_accent, &pal.surface, &pal.foreground);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         }
     });
     row_gen_pal.add_suffix(&btn_gen_pal);
@@ -360,7 +612,7 @@ pub fn build_window(app: &Application) {
     // ========================================================
     let page_hypr = PreferencesPage::new();
 
-    let group_geom = PreferencesGroup::builder().title(&tr.hypr_geometry).description("Marges, dikte en hoekafronding van vensters").build();
+    let group_geom = PreferencesGroup::builder().title(&tr.hypr_geometry).description(&tr.hypr_geom_desc).build();
 
     let row_out = ActionRow::builder().title(&tr.hypr_outer_gaps).subtitle(&format!("{} px", initial_cfg.gaps_out)).build();
     let s_out = Scale::with_range(Orientation::Horizontal, 0.0, 40.0, 1.0);
@@ -426,7 +678,7 @@ pub fn build_window(app: &Application) {
     row_round.add_suffix(&s_round);
     group_geom.add(&row_round);
 
-    let row_color = ActionRow::builder().title(&tr.hypr_border_color).subtitle("Kleur van actief venster").build();
+    let row_color = ActionRow::builder().title(&tr.hypr_border_color).subtitle("Border color").build();
     let c_dialog = ColorDialog::builder().title("Border Color").with_alpha(false).build();
     let c_btn = ColorDialogButton::builder().dialog(&c_dialog).valign(gtk4::Align::Center).build();
     c_btn.set_rgba(&hex_to_rgba(&initial_cfg.active_border_color));
@@ -443,7 +695,7 @@ pub fn build_window(app: &Application) {
 
     page_hypr.add(&group_geom);
 
-    let group_opacity = PreferencesGroup::builder().title(&tr.hypr_transparency).build();
+    let group_opacity = PreferencesGroup::builder().title(&tr.hypr_transparency).description(&tr.hypr_trans_desc).build();
 
     let row_act_op = ActionRow::builder().title(&tr.hypr_active_opacity).subtitle(&format!("{:.0}%", initial_cfg.active_opacity * 100.0)).build();
     let s_act_op = Scale::with_range(Orientation::Horizontal, 0.2, 1.0, 0.05);
@@ -478,9 +730,9 @@ pub fn build_window(app: &Application) {
     group_opacity.add(&row_inact_op);
     page_hypr.add(&group_opacity);
 
-    let group_fx = PreferencesGroup::builder().title(&tr.hypr_effects).build();
+    let group_fx = PreferencesGroup::builder().title(&tr.hypr_effects).description(&tr.hypr_effects_desc).build();
 
-    let row_blur = ActionRow::builder().title(&tr.hypr_blur).subtitle("Achtergrond van vensters vervagen").build();
+    let row_blur = ActionRow::builder().title(&tr.hypr_blur).subtitle("Blur background").build();
     let sw_blur = Switch::builder().active(initial_cfg.blur_enabled).valign(gtk4::Align::Center).build();
     let st_blur = Rc::clone(&state);
     sw_blur.connect_state_set(move |_, active| {
@@ -508,7 +760,7 @@ pub fn build_window(app: &Application) {
     row_bsize.add_suffix(&s_bsize);
     group_fx.add(&row_bsize);
 
-    let row_shd = ActionRow::builder().title(&tr.hypr_shadows).subtitle("Diepte-schaduw achter vensters").build();
+    let row_shd = ActionRow::builder().title(&tr.hypr_shadows).subtitle("Window shadow").build();
     let sw_shd = Switch::builder().active(initial_cfg.shadow_enabled).valign(gtk4::Align::Center).build();
     let st_shd = Rc::clone(&state);
     sw_shd.connect_state_set(move |_, active| {
@@ -520,7 +772,7 @@ pub fn build_window(app: &Application) {
     row_shd.add_suffix(&sw_shd);
     group_fx.add(&row_shd);
 
-    let row_anim = ActionRow::builder().title(&tr.hypr_animations).subtitle("Venster overgangen en animaties").build();
+    let row_anim = ActionRow::builder().title(&tr.hypr_animations).subtitle("Window animations").build();
     let sw_anim = Switch::builder().active(initial_cfg.animations_enabled).valign(gtk4::Align::Center).build();
     let st_anim = Rc::clone(&state);
     sw_anim.connect_state_set(move |_, active| {
@@ -541,85 +793,44 @@ pub fn build_window(app: &Application) {
             let current_mode = format!("{}x{}@{:.2}Hz", mon.width, mon.height, mon.refresh_rate);
 
             let group_mon = PreferencesGroup::builder()
-                .title(&format!("Scherm: {}", mon_name))
-                .description(&format!("Actief: {}", current_mode))
+                .title(&format!("{}: {}", tr.hypr_display, mon_name))
+                .description(&format!("{}: {}", tr.hypr_display_desc, current_mode))
                 .build();
 
             let mut mode_strings: Vec<String> = mon.available_modes.clone();
             if mode_strings.is_empty() {
                 mode_strings.push(format!("{}x{}@{:.2}Hz", mon.width, mon.height, mon.refresh_rate));
             }
-            mode_strings.dedup();
+            let mode_model = StringList::new(&mode_strings.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
+            let row_res = ComboRow::builder().title(&tr.hypr_display_mode).model(&mode_model).build();
+            if let Some(pos) = mode_strings.iter().position(|m| m == &current_mode) {
+                row_res.set_selected(pos as u32);
+            }
 
-            let mode_strs_slices: Vec<&str> = mode_strings.iter().map(|s| s.as_str()).collect();
-            let mode_model = StringList::new(&mode_strs_slices);
+            let m_name_c = mon_name.clone();
+            let m_strings_c = mode_strings.clone();
+            row_res.connect_selected_notify(move |r| {
+                let idx = r.selected() as usize;
+                if let Some(target_mode) = m_strings_c.get(idx) {
+                    hyprland::set_monitor_mode(&m_name_c, target_mode);
+                }
+            });
+            group_mon.add(&row_res);
 
-            let row_mode = ComboRow::builder()
-                .title("Resolutie & Refresh Rate")
-                .subtitle("Kies de schermmodus")
-                .model(&mode_model)
-                .build();
-
-            let active_idx = mode_strings.iter().position(|m| {
-                m.starts_with(&format!("{}x{}", mon.width, mon.height))
-            }).unwrap_or(0);
-            row_mode.set_selected(active_idx as u32);
-
-            let mon_name_scale = mon_name.clone();
-            let scale_state = Rc::clone(&state);
-
-            let row_scale = ActionRow::builder()
-                .title("Beeldscherm Schaal")
-                .subtitle(&format!("{:.2}x", mon.scale))
-                .build();
+            let row_scale = ActionRow::builder().title(&tr.hypr_display_scale).subtitle(&format!("{:.2}x", mon.scale)).build();
             let s_scale = Scale::with_range(Orientation::Horizontal, 1.0, 2.5, 0.25);
             s_scale.set_value(mon.scale);
             s_scale.set_width_request(160);
-
-            let r_sc_c = row_scale.clone();
-            let scale_val_ref = Rc::new(RefCell::new(mon.scale));
-
-            let sc_v_clone = Rc::clone(&scale_val_ref);
-            let mon_name_mode = mon_name.clone();
-            let modes_captured = mode_strings.clone();
-            let st_mode = Rc::clone(&state);
-
-            row_mode.connect_selected_notify(move |r| {
-                let idx = r.selected() as usize;
-                if let Some(target_mode) = modes_captured.get(idx) {
-                    let current_scale = *sc_v_clone.borrow();
-                    hyprland::apply_monitor_rule(&mon_name_mode, target_mode, current_scale);
-
-                    let formatted_rule = format!("{},{},auto,{:.2}", mon_name_mode, target_mode, current_scale);
-                    let mut cfg = st_mode.borrow_mut();
-                    cfg.monitor_rules.retain(|x| !x.starts_with(&mon_name_mode));
-                    cfg.monitor_rules.push(formatted_rule);
-                    config::save_config(&cfg);
-                }
-            });
-
-            let modes_scale_captured = mode_strings.clone();
-            let row_mode_ref = row_mode.clone();
+            let r_scl_c = row_scale.clone();
+            let m_name_scl = mon_name.clone();
             s_scale.connect_value_changed(move |s| {
                 let v = s.value();
-                r_sc_c.set_subtitle(&format!("{:.2}x", v));
-                *scale_val_ref.borrow_mut() = v;
-
-                let sel_idx = row_mode_ref.selected() as usize;
-                let target_mode = modes_scale_captured.get(sel_idx).cloned().unwrap_or_else(|| "preferred".to_string());
-                
-                hyprland::apply_monitor_rule(&mon_name_scale, &target_mode, v);
-
-                let formatted_rule = format!("{},{},auto,{:.2}", mon_name_scale, target_mode, v);
-                let mut cfg = scale_state.borrow_mut();
-                cfg.monitor_rules.retain(|x| !x.starts_with(&mon_name_scale));
-                cfg.monitor_rules.push(formatted_rule);
-                config::save_config(&cfg);
+                r_scl_c.set_subtitle(&format!("{:.2}x", v));
+                hyprland::set_monitor_scale(&m_name_scl, v);
             });
-
             row_scale.add_suffix(&s_scale);
-            group_mon.add(&row_mode);
             group_mon.add(&row_scale);
+
             page_hypr.add(&group_mon);
         }
     }
@@ -629,7 +840,7 @@ pub fn build_window(app: &Application) {
     // ========================================================
     // PAGINA 3: Statusbalk (Quickshell Designer + Waybar Fallback)
     // ========================================================
-    let page_qs = crate::ui::quickshell_designer::build_quickshell_page(&state);
+    let page_qs = crate::ui::quickshell_designer::build_quickshell_page(state, &tr);
 
     let group_wb_layout = PreferencesGroup::builder()
         .title("Waybar Styling (Alternatief)")
@@ -640,7 +851,7 @@ pub fn build_window(app: &Application) {
     let pos_model = StringList::new(&["top", "bottom"]);
     let dd_pos = DropDown::builder().model(&pos_model).valign(gtk4::Align::Center).build();
     dd_pos.set_selected(if initial_cfg.waybar_position == "bottom" { 1 } else { 0 });
-    let st_pos = Rc::clone(&state);
+    let st_pos = Rc::clone(state);
     dd_pos.connect_selected_notify(move |d| {
         let pos_str = if d.selected() == 1 { "bottom" } else { "top" };
         let h = st_pos.borrow().waybar_height;
@@ -656,7 +867,7 @@ pub fn build_window(app: &Application) {
     s_h.set_value(initial_cfg.waybar_height as f64);
     s_h.set_width_request(160);
     let r_h_c = row_h.clone();
-    let st_h = Rc::clone(&state);
+    let st_h = Rc::clone(state);
     s_h.connect_value_changed(move |s| {
         let v = s.value().round() as i32;
         r_h_c.set_subtitle(&format!("{} px", v));
@@ -672,7 +883,7 @@ pub fn build_window(app: &Application) {
     let c_wb_dlg = ColorDialog::builder().title("Waybar Kleur").with_alpha(false).build();
     let c_wb_btn = ColorDialogButton::builder().dialog(&c_wb_dlg).valign(gtk4::Align::Center).build();
     c_wb_btn.set_rgba(&hex_to_rgba(&initial_cfg.waybar_bg_color));
-    let st_wb_bg = Rc::clone(&state);
+    let st_wb_bg = Rc::clone(state);
     c_wb_btn.connect_notify_local(Some("rgba"), move |b, _| {
         let r = b.rgba();
         let hex = format!("{:02x}{:02x}{:02x}", (r.red() * 255.0) as u8, (r.green() * 255.0) as u8, (r.blue() * 255.0) as u8);
@@ -690,7 +901,7 @@ pub fn build_window(app: &Application) {
     s_wb_rnd.set_value(initial_cfg.waybar_rounding as f64);
     s_wb_rnd.set_width_request(160);
     let r_wrnd_c = row_wb_rnd.clone();
-    let st_wb_rnd = Rc::clone(&state);
+    let st_wb_rnd = Rc::clone(state);
     s_wb_rnd.connect_value_changed(move |s| {
         let v = s.value().round() as i32;
         r_wrnd_c.set_subtitle(&format!("{} px", v));
@@ -704,32 +915,38 @@ pub fn build_window(app: &Application) {
     group_wb_layout.add(&row_wb_rnd);
 
     page_qs.add(&group_wb_layout);
-    stack.add_titled(&page_qs, Some("statusbar"), "Statusbalk");
+    stack.add_titled(&page_qs, Some("statusbar"), &tr.sidebar_statusbar);
 
     // ========================================================
     // PAGINA 4: Control Center Designer
     // ========================================================
-    let page_cc = crate::ui::control_center_designer::build_control_center_page(&state);
-    stack.add_titled(&page_cc, Some("control_center"), "Control Center");
+    let page_cc = crate::ui::control_center_designer::build_control_center_page(state, &tr);
+    stack.add_titled(&page_cc, Some("control_center"), &tr.sidebar_control_center);
 
     // ========================================================
     // PAGINA 5: On-Screen Display (OSD) Designer
     // ========================================================
-    let page_osd = crate::ui::osd_designer::build_osd_page(&state);
-    stack.add_titled(&page_osd, Some("osd"), "OSD & Meldingen");
+    let page_osd = crate::ui::osd_designer::build_osd_page(state, &tr);
+    stack.add_titled(&page_osd, Some("osd"), &tr.sidebar_osd);
 
     // ========================================================
-    // PAGINA 6: Thema's & Apps (Kitty, Rofi, Standaard Applicaties)
+    // PAGINA 6: Lockscreen Studio
+    // ========================================================
+    let page_lockscreen = crate::ui::lockscreen_designer::build_lockscreen_page(state, &tr);
+    stack.add_titled(&page_lockscreen, Some("lockscreen"), &tr.sidebar_lockscreen);
+
+    // ========================================================
+    // PAGINA 7: Thema's & Apps (Kitty, Rofi, Standaard Applicaties)
     // ========================================================
     let page_themes = PreferencesPage::new();
 
-    let group_kitty = PreferencesGroup::builder().title("Kitty Terminal").description("Kleuren, transparantie en fontgrootte").build();
+    let group_kitty = PreferencesGroup::builder().title("Kitty Terminal").description(&tr.theme_kitty_desc).build();
     
-    let row_k_bg = ActionRow::builder().title("Achtergrondkleur").build();
-    let dlg_k_bg = ColorDialog::builder().title("Kitty Achtergrond").with_alpha(false).build();
+    let row_k_bg = ActionRow::builder().title(&tr.theme_bg_color).build();
+    let dlg_k_bg = ColorDialog::builder().title("Kitty").with_alpha(false).build();
     let btn_k_bg = ColorDialogButton::builder().dialog(&dlg_k_bg).valign(gtk4::Align::Center).build();
     btn_k_bg.set_rgba(&hex_to_rgba(&initial_cfg.kitty_bg));
-    let st_k_bg = Rc::clone(&state);
+    let st_k_bg = Rc::clone(state);
     btn_k_bg.connect_notify_local(Some("rgba"), move |b, _| {
         let r = b.rgba();
         let hex = format!("{:02x}{:02x}{:02x}", (r.red() * 255.0) as u8, (r.green() * 255.0) as u8, (r.blue() * 255.0) as u8);
@@ -743,12 +960,12 @@ pub fn build_window(app: &Application) {
     row_k_bg.add_suffix(&btn_k_bg);
     group_kitty.add(&row_k_bg);
 
-    let row_k_op = ActionRow::builder().title("Venster Transparantie").subtitle(&format!("{:.0}%", initial_cfg.kitty_opacity * 100.0)).build();
+    let row_k_op = ActionRow::builder().title(&tr.theme_window_trans).subtitle(&format!("{:.0}%", initial_cfg.kitty_opacity * 100.0)).build();
     let s_k_op = Scale::with_range(Orientation::Horizontal, 0.4, 1.0, 0.05);
     s_k_op.set_value(initial_cfg.kitty_opacity);
     s_k_op.set_width_request(160);
     let r_kop_c = row_k_op.clone();
-    let st_k_op = Rc::clone(&state);
+    let st_k_op = Rc::clone(state);
     s_k_op.connect_value_changed(move |s| {
         let v = s.value();
         r_kop_c.set_subtitle(&format!("{:.0}%", v * 100.0));
@@ -762,12 +979,12 @@ pub fn build_window(app: &Application) {
     row_k_op.add_suffix(&s_k_op);
     group_kitty.add(&row_k_op);
 
-    let row_k_font = ActionRow::builder().title("Lettergrootte").subtitle(&format!("{:.1} pt", initial_cfg.kitty_font_size)).build();
+    let row_k_font = ActionRow::builder().title(&tr.theme_font_size).subtitle(&format!("{:.1} pt", initial_cfg.kitty_font_size)).build();
     let s_k_font = Scale::with_range(Orientation::Horizontal, 8.0, 20.0, 0.5);
     s_k_font.set_value(initial_cfg.kitty_font_size);
     s_k_font.set_width_request(160);
     let r_kfont_c = row_k_font.clone();
-    let st_k_font = Rc::clone(&state);
+    let st_k_font = Rc::clone(state);
     s_k_font.connect_value_changed(move |s| {
         let v = s.value();
         r_kfont_c.set_subtitle(&format!("{:.1} pt", v));
@@ -782,13 +999,13 @@ pub fn build_window(app: &Application) {
     group_kitty.add(&row_k_font);
     page_themes.add(&group_kitty);
 
-    let group_rofi = PreferencesGroup::builder().title("Rofi Menu").description("Vensterkleur en afronding").build();
+    let group_rofi = PreferencesGroup::builder().title("Rofi Menu").description(&tr.theme_rofi_desc).build();
     
-    let row_r_bg = ActionRow::builder().title("Achtergrondkleur").build();
-    let dlg_r_bg = ColorDialog::builder().title("Rofi Achtergrond").with_alpha(false).build();
+    let row_r_bg = ActionRow::builder().title(&tr.theme_bg_color).build();
+    let dlg_r_bg = ColorDialog::builder().title("Rofi").with_alpha(false).build();
     let btn_r_bg = ColorDialogButton::builder().dialog(&dlg_r_bg).valign(gtk4::Align::Center).build();
     btn_r_bg.set_rgba(&hex_to_rgba(&initial_cfg.rofi_bg));
-    let st_r_bg = Rc::clone(&state);
+    let st_r_bg = Rc::clone(state);
     btn_r_bg.connect_notify_local(Some("rgba"), move |b, _| {
         let r = b.rgba();
         let hex = format!("{:02x}{:02x}{:02x}", (r.red() * 255.0) as u8, (r.green() * 255.0) as u8, (r.blue() * 255.0) as u8);
@@ -802,12 +1019,12 @@ pub fn build_window(app: &Application) {
     row_r_bg.add_suffix(&btn_r_bg);
     group_rofi.add(&row_r_bg);
 
-    let row_r_rnd = ActionRow::builder().title("Venster Afronding").subtitle(&format!("{} px", initial_cfg.rofi_rounding)).build();
+    let row_r_rnd = ActionRow::builder().title(&tr.theme_rounding).subtitle(&format!("{} px", initial_cfg.rofi_rounding)).build();
     let s_r_rnd = Scale::with_range(Orientation::Horizontal, 0.0, 30.0, 1.0);
     s_r_rnd.set_value(initial_cfg.rofi_rounding as f64);
     s_r_rnd.set_width_request(160);
     let r_rrnd_c = row_r_rnd.clone();
-    let st_r_rnd = Rc::clone(&state);
+    let st_r_rnd = Rc::clone(state);
     s_r_rnd.connect_value_changed(move |s| {
         let v = s.value().round() as i32;
         r_rrnd_c.set_subtitle(&format!("{} px", v));
@@ -824,13 +1041,13 @@ pub fn build_window(app: &Application) {
 
     let group_tools = PreferencesGroup::builder()
         .title(&tr.theme_apps)
-        .description("Kies je launcher, terminal en shell")
+        .description("Default Applications")
         .build();
 
     let launcher_model = StringList::new(&["Rofi", "Wofi"]);
-    let row_launcher = ComboRow::builder().title("Applicatiemenu ($menu)").model(&launcher_model).build();
+    let row_launcher = ComboRow::builder().title("Menu ($menu)").model(&launcher_model).build();
     row_launcher.set_selected(if initial_cfg.default_launcher == "wofi" { 1 } else { 0 });
-    let st_lnc = Rc::clone(&state);
+    let st_lnc = Rc::clone(state);
     row_launcher.connect_selected_notify(move |r| {
         let choice = if r.selected() == 1 { "wofi" } else { "rofi" };
         process::ensure_launcher_installed(choice);
@@ -842,7 +1059,7 @@ pub fn build_window(app: &Application) {
     let term_model = StringList::new(&["Kitty", "Alacritty", "Foot"]);
     let row_term = ComboRow::builder().title("Terminal ($terminal)").model(&term_model).build();
     row_term.set_selected(match initial_cfg.default_terminal.as_str() { "alacritty" => 1, "foot" => 2, _ => 0 });
-    let st_trm = Rc::clone(&state);
+    let st_trm = Rc::clone(state);
     row_term.connect_selected_notify(move |r| {
         let choice = match r.selected() { 1 => "alacritty", 2 => "foot", _ => "kitty" };
         process::ensure_terminal_installed(choice);
@@ -854,7 +1071,7 @@ pub fn build_window(app: &Application) {
     let shell_model = StringList::new(&["Zsh", "Bash", "Fish"]);
     let row_shell = ComboRow::builder().title("Default User Shell").model(&shell_model).build();
     row_shell.set_selected(match initial_cfg.default_shell.as_str() { "bash" => 1, "fish" => 2, _ => 0 });
-    let st_shl = Rc::clone(&state);
+    let st_shl = Rc::clone(state);
     row_shell.connect_selected_notify(move |r| {
         let choice = match r.selected() { 1 => "bash", 2 => "fish", _ => "zsh" };
         process::set_user_shell(choice);
@@ -864,15 +1081,27 @@ pub fn build_window(app: &Application) {
     group_tools.add(&row_shell);
 
     page_themes.add(&group_tools);
-    stack.add_titled(&page_themes, Some("themes"), "Thema's & Apps");
+    stack.add_titled(&page_themes, Some("themes"), &tr.sidebar_themes);
 
     // ========================================================
-    // PAGINA 7: Systeem & Tools
+    // PAGINA 7: Iconen & Emoji's
+    // ========================================================
+    let page_icons = crate::ui::icon_studio::build_icon_studio_page(&tr);
+    stack.add_titled(&page_icons, Some("icons"), &tr.icons_title);
+
+    // ========================================================
+    // PAGINA 8: Fastfetch Visual Studio
+    // ========================================================
+    let page_fastfetch = crate::ui::fastfetch_designer::build_fastfetch_page(&tr);
+    stack.add_titled(&page_fastfetch, Some("fastfetch"), &tr.sidebar_fastfetch);
+
+    // ========================================================
+    // PAGINA 9: Systeem & Tools
     // ========================================================
     let page_system = PreferencesPage::new();
-    let group_sys = PreferencesGroup::builder().title("Systeem Hulpmiddelen").build();
+    let group_sys = PreferencesGroup::builder().title(&tr.sidebar_system).build();
 
-    let row_dnd = ActionRow::builder().title("Do Not Disturb").subtitle("Meldingen pauzeren (Dunst)").build();
+    let row_dnd = ActionRow::builder().title(&tr.sys_dnd_title).subtitle(&tr.sys_dnd_sub).build();
     let sw_dnd = Switch::builder().valign(gtk4::Align::Center).build();
     sw_dnd.connect_state_set(|_, active| {
         process::toggle_dunst_dnd(active);
@@ -881,15 +1110,32 @@ pub fn build_window(app: &Application) {
     row_dnd.add_suffix(&sw_dnd);
     group_sys.add(&row_dnd);
 
-    let row_wall = ActionRow::builder().title("Wallpaper").subtitle("Selecteer een achtergrondafbeelding").build();
-    let btn_wall = Button::builder().label("Kies bestand...").valign(gtk4::Align::Center).build();
+    let row_wall = ActionRow::builder()
+        .title(tr.dash_wallpaper.as_str())
+        .subtitle(if current_wp.is_empty() { &tr.dash_wallpaper_sub } else { &current_wp })
+        .build();
+    let btn_wall = Button::builder().label(&tr.dash_choose_file).valign(gtk4::Align::Center).build();
+    let r_wall_sys = row_wall.clone();
+    let choose_wall_sys_title = tr.dash_choose_wallpaper_title.clone();
     btn_wall.connect_clicked(move |_| {
-        let fd = FileDialog::builder().title("Kies achtergrond").build();
+        let fd = FileDialog::builder().title(&choose_wall_sys_title).build();
+        let r_cl2 = r_wall_sys.clone();
         fd.open(None::<&gtk4::Window>, None::<&gtk4::gio::Cancellable>, move |res| {
             if let Ok(file) = res {
                 if let Some(path) = file.path() {
                     if let Some(p_str) = path.to_str() {
-                        hyprland::set_wallpaper(p_str);
+                        if is_valid_image(p_str) {
+                            hyprland::set_wallpaper(p_str);
+                            r_cl2.set_subtitle(p_str);
+                            let mut scfg = ZenithShellConfig::load_or_default();
+                            scfg.wallpaper_path = p_str.to_string();
+                            let _ = scfg.save();
+                            if scfg.auto_palette {
+                                if let Some(pal) = palette::extract_palette(p_str) {
+                                    palette::apply_palette(&pal);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -899,28 +1145,22 @@ pub fn build_window(app: &Application) {
     group_sys.add(&row_wall);
 
     page_system.add(&group_sys);
-    stack.add_titled(&page_system, Some("system"), "Systeem & Tools");
+    stack.add_titled(&page_system, Some("system"), &tr.sidebar_system);
 
-    let page_icons = crate::ui::icon_studio::build_icon_studio_page(&tr);
-    stack.add_titled(&page_icons, Some("icons"), &tr.icons_title);
-
-    // Selecteer initiële Dashboard pagina in de zijbalk
-    if let Some(first_row) = nav_list.row_at_index(0) {
-        nav_list.select_row(Some(&first_row));
+    // Selecteer initiële pagina in de zijbalk
+    let mut selected_index = 0;
+    for (i, item) in nav_items.iter().enumerate() {
+        if item.id == active_tab {
+            selected_index = i as i32;
+            break;
+        }
+    }
+    if let Some(target_row) = nav_list.row_at_index(selected_index) {
+        nav_list.select_row(Some(&target_row));
+        stack.set_visible_child_name(active_tab);
     }
 
-    // ========================================================
-    // Hoofdvenster Builder
-    // ========================================================
-    let window = ApplicationWindow::builder()
-        .application(app)
-        .title("Zenith")
-        .default_width(940)
-        .default_height(700)
-        .content(&root_box)
-        .build();
-
-    window.present();
+    root_box
 }
 
 fn hex_to_rgba(hex: &str) -> RGBA {
