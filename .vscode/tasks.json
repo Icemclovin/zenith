@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "zenith: build release",
+      "type": "shell",
+      "command": "cargo build --release",
+      "group": "build",
+      "problemMatcher": "$rustc",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "zenith: build debug",
+      "type": "shell",
+      "command": "cargo build",
+      "group": "build",
+      "problemMatcher": "$rustc",
+      "options": { "cwd": "${workspaceFolder}" }
+    }
+  ]
+}
