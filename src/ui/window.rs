@@ -229,6 +229,7 @@ fn build_window_content(
         NavItem { id: "lockscreen", title: tr.sidebar_lockscreen.clone(), icon: "system-lock-screen-symbolic", advanced: false },
         NavItem { id: "themes", title: tr.sidebar_themes.clone(), icon: "applications-accessories-symbolic", advanced: false },
         NavItem { id: "system", title: tr.sidebar_system.clone(), icon: "emblem-system-symbolic", advanced: false },
+        NavItem { id: "backup", title: tr.sidebar_backup.clone(), icon: "folder-download-symbolic", advanced: false },
         NavItem { id: "icons", title: tr.icons_title.clone(), icon: "emblem-favorite-symbolic", advanced: true },
         NavItem { id: "fastfetch", title: tr.sidebar_fastfetch.clone(), icon: "utilities-terminal-symbolic", advanced: true },
     ];
@@ -1405,6 +1406,28 @@ fn build_window_content(
     group_monitor.add(&row_monitor);
     page_system.add(&group_monitor);
 
+    // Back-up & Herstel (snelkoppeling naar de back-up-pagina)
+    let group_backup = PreferencesGroup::builder()
+        .title(crate::ui::escape::pango_escape(&tr.sidebar_backup))
+        .description(crate::ui::escape::pango_escape(&tr.bk_create_desc))
+        .build();
+    let row_backup = ActionRow::builder()
+        .title(crate::ui::escape::pango_escape(&tr.sidebar_backup))
+        .subtitle(format!("{} — {}", tr.bk_create_title, tr.bk_create_desc))
+        .build();
+    let btn_backup = Button::builder()
+        .label("🔄")
+        .valign(gtk4::Align::Center)
+        .tooltip_text(crate::ui::escape::pango_escape(&tr.bk_action_sub))
+        .build();
+    let stack_to_backup = stack.clone();
+    btn_backup.connect_clicked(move |_| {
+        stack_to_backup.set_visible_child_name("backup");
+    });
+    row_backup.add_suffix(&btn_backup);
+    group_backup.add(&row_backup);
+    page_system.add(&group_backup);
+
     // Over Zenith
     let group_about = PreferencesGroup::builder().title(&tr.sys_about).build();
     let row_about = ActionRow::builder()
@@ -1415,6 +1438,12 @@ fn build_window_content(
     page_system.add(&group_about);
 
     stack.add_titled(&page_system, Some("system"), &crate::ui::escape::pango_escape(&tr.sidebar_system));
+
+    // ========================================================
+    // PAGINA: Back-up & Herstel
+    // ========================================================
+    let page_backup = crate::ui::backup_designer::build_backup_page(&tr);
+    stack.add_titled(&page_backup, Some("backup"), &crate::ui::escape::pango_escape(&tr.sidebar_backup));
 
     // Selecteer initiële pagina in de zijbalk
     let mut selected_index = 0;

@@ -1,3 +1,4 @@
+pub mod backup_designer;
 pub mod control_center_designer;
 pub mod escape;
 pub mod fastfetch_designer;

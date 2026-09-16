@@ -470,6 +470,53 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     page.add(&group_custom_scripts);
 
     // ========================================================
+    // 3b. Volledige vrijheid — onbeperkte eigen modules
+    // ========================================================
+    let group_freedom = PreferencesGroup::builder()
+        .title("♾️ Volledige vrijheid (Power User)")
+        .description("Plaats je eigen .qml-modules in de modules-map — Zenith toont ze automatisch en onbeperkt op je statusbalk, naast de ingebouwde modules.")
+        .build();
+
+    // Module-map openen
+    let row_modules = ActionRow::builder()
+        .title("📂 Eigen modules-map openen")
+        .subtitle("~/.config/quickshell/modules  —  elke .qml die je hierin plaatst is meteen beschikbaar")
+        .build();
+    let btn_modules = Button::builder()
+        .label(crate::ui::escape::pango_escape(&tr.common_open_folder).as_str())
+        .valign(gtk4::Align::Center)
+        .build();
+    let modules_dir = ZenithShellConfig::modules_dir().unwrap_or_default();
+    btn_modules.connect_clicked(move |_| {
+        process::execute_cmd(&format!("xdg-open '{}' &", modules_dir.to_string_lossy()));
+    });
+    row_modules.add_suffix(&btn_modules);
+    group_freedom.add(&row_modules);
+
+    // Aantal ontdekte custom modules (bewijst dat er geen limiet is)
+    let custom_count = shell_state.borrow().discover_modules_for_instance()
+        .iter()
+        .filter(|m| m.is_custom)
+        .count();
+    let row_count = ActionRow::builder()
+        .title("🔍 Actief ontdekte eigen modules")
+        .subtitle(format!(
+            "{} in gebruik — voeg er onbeperkt bij via de modules-map.",
+            custom_count
+        ))
+        .build();
+    group_freedom.add(&row_count);
+
+    // Hint over custom script modules
+    let row_hint = ActionRow::builder()
+        .title("💡 Tip: volledige Quickshell-kracht")
+        .subtitle("Wil je nog meer? Maak hierboven een Custom Script-module of bewerk je eigen shell.qml. Zenith is een laag over Quickshell, niet een beperking ervan.")
+        .build();
+    group_freedom.add(&row_hint);
+
+    page.add(&group_freedom);
+
+    // ========================================================
     // 4. Geometrie & Positie
     // ========================================================
     let group_geom = PreferencesGroup::builder()
