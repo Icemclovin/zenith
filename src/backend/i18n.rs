@@ -166,6 +166,10 @@ pub struct Translations {
     pub onb_power_desc: String,
     pub onb_open_power: String,
 
+    // MODUS / WEERGAVE (Basis vs Geavanceerd)
+    pub mode_advanced: String,
+    pub mode_advanced_desc: String,
+
     // DASHBOARD ADDITIONAL
     pub dash_quick_desc: String,
     pub dash_cc_title: String,
@@ -347,6 +351,8 @@ pub fn get_translations(lang: &Language) -> Translations {
             onb_power_title: "Power User vrijheid".to_string(),
             onb_power_desc: "Wil je echt alles zelf bepalen? Bewerk de ruwe Quickshell-bestanden en QML-modules direct — de volle kracht van Quickshell, met de eenvoud van Zenith.".to_string(),
             onb_open_power: "Open Power User".to_string(),
+            mode_advanced: "Power User modus".to_string(),
+            mode_advanced_desc: "Toon alle geavanceerde pagina's en power-functies".to_string(),
             dash_quick_desc: "Test en bedien Quickshell en Hyprland componenten direct".to_string(),
             dash_cc_title: "Control Center Paneel".to_string(),
             dash_cc_sub: "Open of sluit het zwevende controlepaneel".to_string(),
@@ -510,6 +516,8 @@ pub fn get_translations(lang: &Language) -> Translations {
             onb_power_title: "Power User freedom".to_string(),
             onb_power_desc: "Want full control? Edit the raw Quickshell files and QML modules directly — the full power of Quickshell, with the simplicity of Zenith.".to_string(),
             onb_open_power: "Open Power User".to_string(),
+            mode_advanced: "Power User mode".to_string(),
+            mode_advanced_desc: "Show all advanced pages and power features".to_string(),
             dash_quick_desc: "Test and control Quickshell and Hyprland components directly".to_string(),
             dash_cc_title: "Control Center Panel".to_string(),
             dash_cc_sub: "Open or close the floating control panel".to_string(),
@@ -673,6 +681,8 @@ pub fn get_translations(lang: &Language) -> Translations {
             onb_power_title: "Power-User-Freiheit".to_string(),
             onb_power_desc: "Volle Kontrolle gewünscht? Bearbeite die rohen Quickshell-Dateien und QML-Module direkt — die volle Kraft von Quickshell mit der Einfachheit von Zenith.".to_string(),
             onb_open_power: "Power User öffnen".to_string(),
+            mode_advanced: "Power-User-Modus".to_string(),
+            mode_advanced_desc: "Alle erweiterten Seiten und Power-Funktionen anzeigen".to_string(),
             dash_quick_desc: "Quickshell- und Hyprland-Komponenten direkt testen und steuern".to_string(),
             dash_cc_title: "Kontrollzentrum-Panel".to_string(),
             dash_cc_sub: "Schwebendes Kontrollzentrum öffnen oder schließen".to_string(),
@@ -836,6 +846,8 @@ pub fn get_translations(lang: &Language) -> Translations {
             onb_power_title: "Libertad de usuario avanzado".to_string(),
             onb_power_desc: "¿Quieres control total? Edita los archivos de Quickshell y los módulos QML directamente — todo el poder de Quickshell con la sencillez de Zenith.".to_string(),
             onb_open_power: "Abrir Power User".to_string(),
+            mode_advanced: "Modo Power User".to_string(),
+            mode_advanced_desc: "Mostrar todas las páginas avanzadas y funciones de power user".to_string(),
             dash_quick_desc: "Probar y controlar componentes de Quickshell y Hyprland directamente".to_string(),
             dash_cc_title: "Panel del Centro de Control".to_string(),
             dash_cc_sub: "Abrir o cerrar el panel de control flotante".to_string(),
@@ -961,7 +973,7 @@ mod tests {
                 icons_title, icons_module_icons, icons_card_icons,
                 common_save, common_cancel, common_reset, common_apply, common_open_folder, common_create_template,
                 lang_select,
-                onb_welcome_title, onb_welcome_desc, onb_core_status, onb_core_status_desc, onb_install, onb_installed, onb_install_all, onb_all_set, onb_power_title, onb_power_desc, onb_open_power,
+                onb_welcome_title, onb_welcome_desc, onb_core_status, onb_core_status_desc, onb_install, onb_installed, onb_install_all, onb_all_set, onb_power_title, onb_power_desc, onb_open_power, mode_advanced, mode_advanced_desc,
                 sidebar_fastfetch, ff_preview, ff_refresh_preview, ff_logo_settings, ff_logo_type, ff_logo_source, ff_modules, ff_add_module, ff_custom_command, ff_cmd_name, ff_cmd_script, ff_styling, ff_separator, ff_save, ff_saved_toast,
                 sidebar_lockscreen, ls_preview, ls_test_preview, ls_lock_now, ls_layout_preset, ls_bg_mode, ls_blur_radius, ls_dim_opacity, ls_clock_format, ls_clock_size, ls_greeting, ls_auth_icon, ls_shake, ls_cards, ls_add_card, ls_save, ls_saved_toast,
             );

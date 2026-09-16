@@ -435,6 +435,10 @@ pub struct ZenithShellConfig {
     pub custom_icons: CustomIcons,
     #[serde(default)]
     pub lockscreen: LockscreenConfig,
+    /// Wanneer `true` toont de zijbalk de geavanceerde pagina's (Placeholder voor
+    /// power users); bij `false` blijft de UI gericht op de kern-onderdelen.
+    #[serde(default)]
+    pub advanced_mode: bool,
 }
 
 impl Default for ZenithShellConfig {
@@ -453,6 +457,7 @@ impl Default for ZenithShellConfig {
             wallpaper_path: String::new(),
             custom_icons: CustomIcons::default(),
             lockscreen: LockscreenConfig::default(),
+            advanced_mode: false,
         }
     }
 }
@@ -1049,6 +1054,30 @@ mod tests {
         assert_eq!(parsed.custom_icons.volume_high, "󰕾");
         assert_eq!(parsed.language, "en");
         assert!(parsed.auto_palette);
+    }
+
+    #[test]
+    fn test_advanced_mode_roundtrip_and_default() {
+        // Default is 'false' (basis-modus).
+        let cfg = ZenithShellConfig::default();
+        assert!(!cfg.advanced_mode);
+
+        // Roundtrip: true wordt bewaard.
+        let cfg2 = ZenithShellConfig { advanced_mode: true, ..ZenithShellConfig::default() };
+        let json = serde_json::to_string(&cfg2).expect("Serialization failed");
+        let parsed: ZenithShellConfig = serde_json::from_str(&json).expect("Deserialization failed");
+        assert!(parsed.advanced_mode);
+
+        // Achterwaartse compatibiliteit: een opgeslagen config ZONDER
+        // 'advanced_mode' (oudere versie op schijf) moet nog steeds inlezen en
+        // lever dan `false` op.
+        let cfg_old = serde_json::to_string(&ZenithShellConfig::default()).expect("Serialization failed");
+        let cfg_old_without_field = cfg_old
+            .replace("\"advanced_mode\":false,", "")   // veld midden in het object
+            .replace(",\"advanced_mode\":false", "");  // veld als laatste sleutel
+        let parsed_legacy: ZenithShellConfig =
+            serde_json::from_str(&cfg_old_without_field).expect("Legacy parse failed");
+        assert!(!parsed_legacy.advanced_mode);
     }
 
     #[test]

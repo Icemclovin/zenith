@@ -215,24 +215,32 @@ fn build_window_content(
         id: &'static str,
         title: String,
         icon: &'static str,
+        /// `true` voor pagina's die vooral voor power users interessant zijn
+        /// en worden verborgen in de "basis"-modus.
+        advanced: bool,
     }
 
     let nav_items = [
-        NavItem { id: "dashboard", title: tr.sidebar_dashboard.clone(), icon: "view-grid-symbolic" },
-        NavItem { id: "hyprland", title: tr.sidebar_hyprland.clone(), icon: "applications-graphics-symbolic" },
-        NavItem { id: "statusbar", title: tr.sidebar_statusbar.clone(), icon: "utilities-terminal-symbolic" },
-        NavItem { id: "control_center", title: tr.sidebar_control_center.clone(), icon: "preferences-desktop-keyboard-shortcuts-symbolic" },
-        NavItem { id: "osd", title: tr.sidebar_osd.clone(), icon: "video-display-symbolic" },
-        NavItem { id: "lockscreen", title: tr.sidebar_lockscreen.clone(), icon: "system-lock-screen-symbolic" },
-        NavItem { id: "themes", title: tr.sidebar_themes.clone(), icon: "applications-accessories-symbolic" },
-        NavItem { id: "icons", title: tr.icons_title.clone(), icon: "emblem-favorite-symbolic" },
-        NavItem { id: "fastfetch", title: tr.sidebar_fastfetch.clone(), icon: "utilities-terminal-symbolic" },
-        NavItem { id: "system", title: tr.sidebar_system.clone(), icon: "emblem-system-symbolic" },
+        NavItem { id: "dashboard", title: tr.sidebar_dashboard.clone(), icon: "view-grid-symbolic", advanced: false },
+        NavItem { id: "hyprland", title: tr.sidebar_hyprland.clone(), icon: "applications-graphics-symbolic", advanced: false },
+        NavItem { id: "statusbar", title: tr.sidebar_statusbar.clone(), icon: "utilities-terminal-symbolic", advanced: false },
+        NavItem { id: "control_center", title: tr.sidebar_control_center.clone(), icon: "preferences-desktop-keyboard-shortcuts-symbolic", advanced: false },
+        NavItem { id: "osd", title: tr.sidebar_osd.clone(), icon: "video-display-symbolic", advanced: false },
+        NavItem { id: "lockscreen", title: tr.sidebar_lockscreen.clone(), icon: "system-lock-screen-symbolic", advanced: false },
+        NavItem { id: "themes", title: tr.sidebar_themes.clone(), icon: "applications-accessories-symbolic", advanced: false },
+        NavItem { id: "system", title: tr.sidebar_system.clone(), icon: "emblem-system-symbolic", advanced: false },
+        NavItem { id: "icons", title: tr.icons_title.clone(), icon: "emblem-favorite-symbolic", advanced: true },
+        NavItem { id: "fastfetch", title: tr.sidebar_fastfetch.clone(), icon: "utilities-terminal-symbolic", advanced: true },
     ];
+
+    let shell_initial = ZenithShellConfig::load_or_default();
+    let advanced_init = shell_initial.advanced_mode;
+    let mut advanced_rows: Vec<gtk4::ListBoxRow> = Vec::new();
 
     for item in &nav_items {
         let row = ListBoxRow::new();
         row.set_widget_name(item.id);
+        row.set_visible(!item.advanced || advanced_init);
 
         let row_box = Box::new(Orientation::Horizontal, 10);
         row_box.set_margin_top(4);
@@ -253,6 +261,10 @@ fn build_window_content(
         row_box.append(&lbl);
         row.set_child(Some(&row_box));
         nav_list.append(&row);
+
+        if item.advanced {
+            advanced_rows.push(row);
+        }
     }
 
     sidebar.append(&nav_list);
@@ -333,6 +345,41 @@ fn build_window_content(
     lang_box.append(&lang_drop);
     sidebar.append(&lang_box);
 
+    // Modus-schakelaar: Basis (gericht) vs Power User (alles zichtbaar)
+    let mode_box = Box::new(Orientation::Horizontal, 8);
+    mode_box.set_margin_top(8);
+    mode_box.set_margin_start(12);
+    mode_box.set_margin_end(12);
+    let mode_lbl_col = Box::new(Orientation::Vertical, 2);
+    let mode_title = Label::builder()
+        .label(crate::ui::escape::pango_escape(&tr.mode_advanced))
+        .halign(gtk4::Align::Start)
+        .hexpand(true)
+        .build();
+    let mode_sub = Label::builder()
+        .label(crate::ui::escape::pango_escape(&tr.mode_advanced_desc))
+        .halign(gtk4::Align::Start)
+        .css_classes(["zenith-mode-sub"])
+        .build();
+    mode_lbl_col.append(&mode_title);
+    mode_lbl_col.append(&mode_sub);
+    let sw_mode = Switch::builder().valign(gtk4::Align::Center).active(advanced_init).build();
+    mode_box.append(&mode_lbl_col);
+    mode_box.append(&sw_mode);
+    sidebar.append(&mode_box);
+
+    let advanced_rows_rc = Rc::new(std::cell::RefCell::new(advanced_rows));
+    sw_mode.connect_active_notify(move |sw| {
+        let active = sw.is_active();
+        let rows = advanced_rows_rc.borrow();
+        for row in rows.iter() {
+            row.set_visible(active);
+        }
+        let mut scfg = ZenithShellConfig::load_or_default();
+        scfg.advanced_mode = active;
+        let _ = scfg.save();
+    });
+
     let spacer = Box::new(Orientation::Vertical, 0);
     spacer.set_vexpand(true);
     sidebar.append(&spacer);
@@ -343,7 +390,6 @@ fn build_window_content(
         .css_classes(["zenith-brand-sub"])
         .build();
     sidebar.append(&footer_lbl);
-
     root_box.append(&sidebar);
     root_box.append(&content_box);
 
