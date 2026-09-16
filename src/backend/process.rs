@@ -1,5 +1,100 @@
 use std::process::{Command, Stdio};
 
+/// Kern-pakketten waar Zenith (impliciet) op kan steunen. `install` is de
+/// Arch-pakketnaam, `binary` het commando dat in $PATH moet bestaan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZenithDependency {
+    Quickshell,
+    Hyprland,
+    Waybar,
+    Rofi,
+    Wofi,
+}
+
+impl ZenithDependency {
+    pub const ALL: [ZenithDependency; 5] = [
+        ZenithDependency::Quickshell,
+        ZenithDependency::Hyprland,
+        ZenithDependency::Waybar,
+        ZenithDependency::Rofi,
+        ZenithDependency::Wofi,
+    ];
+
+    /// Het commando dat in $PATH moet voorkomen om te bepalen of het geïnstalleerd is.
+    pub fn binary(&self) -> &'static str {
+        match self {
+            ZenithDependency::Quickshell => "quickshell",
+            ZenithDependency::Hyprland => "Hyprland",
+            ZenithDependency::Waybar => "waybar",
+            ZenithDependency::Rofi => "rofi",
+            ZenithDependency::Wofi => "wofi",
+        }
+    }
+
+    /// Arch-pakketnaam die via pacman geïnstalleerd moet worden.
+    pub fn arch_package(&self) -> &'static str {
+        match self {
+            ZenithDependency::Quickshell => "quickshell",
+            ZenithDependency::Hyprland => "hyprland",
+            ZenithDependency::Waybar => "waybar",
+            ZenithDependency::Rofi => "rofi-wayland",
+            ZenithDependency::Wofi => "wofi",
+        }
+    }
+
+    /// Een korte, mensvriendelijke omschrijving voor de UI.
+    pub fn title(&self) -> &'static str {
+        match self {
+            ZenithDependency::Quickshell => "Quickshell",
+            ZenithDependency::Hyprland => "Hyprland",
+            ZenithDependency::Waybar => "Waybar",
+            ZenithDependency::Rofi => "Rofi",
+            ZenithDependency::Wofi => "Wofi",
+        }
+    }
+
+    /// Of dit pakket op dit moment (niet) geïnstalleerd is.
+    pub fn is_installed(&self) -> bool {
+        is_command_available(self.binary())
+    }
+}
+
+/// Geeft de lijst van kern-afhankelijkheden die ontbreken.
+pub fn missing_dependencies() -> Vec<ZenithDependency> {
+    ZenithDependency::ALL.iter().copied().filter(|d| !d.is_installed()).collect()
+}
+
+/// Installeert één pakket via pkexec pacman; valt terug op `sudo` wanneer
+/// pkexec niet beschikbaar is. Dit toont een beheerders-prompt voor de gebruiker.
+pub fn install_dependency(dep: ZenithDependency) {
+    let pkg = dep.arch_package();
+    install_packages(&[pkg]);
+}
+
+/// Installeert Quickshell (en eventuele quickshell-aanvullingen) met een beheerders-prompt.
+pub fn install_quickshell() {
+    install_packages(&["quickshell"]);
+}
+
+/// Installeert een lijst pakketten via pkexec (of sudo) met `pacman -S --noconfirm`.
+pub fn install_packages(packages: &[&str]) {
+    if packages.is_empty() {
+        return;
+    }
+    // Gebruik pkexec voor de GUI-omgeving; val terug op sudo voor terminal-gebruikers.
+    let installer = if is_command_available("pkexec") { "pkexec" } else { "sudo" };
+    let _ = Command::new(installer)
+        .args([pacman_path()])
+        .args(["-S", "--noconfirm"])
+        .args(packages)
+        .spawn();
+}
+
+/// Pad naar het pacman-commando (altijd `/usr/bin/pacman`, tenzij het elders staat).
+fn pacman_path() -> &'static str {
+    if is_command_available("pacman") { "pacman" } else { "/usr/bin/pacman" }
+}
+
 /// Zorgt dat de geselecteerde statusbalk geïnstalleerd is (via pkexec pacman indien nodig)
 pub fn ensure_bar_installed(bar: &str) {
     let pkg = match bar {
@@ -9,9 +104,7 @@ pub fn ensure_bar_installed(bar: &str) {
     };
 
     if !is_command_available(bar) {
-        let _ = Command::new("pkexec")
-            .args(["pacman", "-S", "--noconfirm", pkg])
-            .spawn();
+        install_packages(&[pkg]);
     }
 }
 
@@ -57,9 +150,7 @@ pub fn ensure_launcher_installed(launcher: &str) {
     };
 
     if !is_command_available(launcher) {
-        let _ = Command::new("pkexec")
-            .args(["pacman", "-S", "--noconfirm", pkg])
-            .spawn();
+        install_packages(&[pkg]);
     }
 }
 
@@ -72,9 +163,7 @@ pub fn ensure_terminal_installed(term: &str) {
     };
 
     if !is_command_available(term) {
-        let _ = Command::new("pkexec")
-            .args(["pacman", "-S", "--noconfirm", pkg])
-            .spawn();
+        install_packages(&[pkg]);
     }
 }
 
@@ -159,4 +248,38 @@ pub fn execute_cmd(cmd_str: &str) {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dependency_metadata_is_consistent() {
+        // Elke dependency heeft een logisch binary- en pakketnaam.
+        assert_eq!(ZenithDependency::Quickshell.binary(), "quickshell");
+        assert_eq!(ZenithDependency::Quickshell.arch_package(), "quickshell");
+        assert_eq!(ZenithDependency::Hyprland.binary(), "Hyprland");
+        assert_eq!(ZenithDependency::Waybar.arch_package(), "waybar");
+        assert_eq!(ZenithDependency::Rofi.arch_package(), "rofi-wayland");
+        // Titel is nooit leeg en de enum is compleet.
+        for d in ZenithDependency::ALL {
+            assert!(!d.title().is_empty());
+        }
+        assert_eq!(ZenithDependency::ALL.len(), 5);
+    }
+
+    #[test]
+    fn is_command_available_works() {
+        // Een commando dat vrijwel nooit bestaat moet op false uitkomen.
+        assert!(!is_command_available("zenith_deze_bestaat_niet_probeer_xyz"));
+        // Onszelf (of een gegarandeerd aanwezige shell) moet gevonden worden.
+        assert!(is_command_available("/bin/sh") || is_command_available("sh"));
+    }
+
+    #[test]
+    fn install_packages_handles_empty() {
+        // Lege lijst moet een no-op zijn; dit hoeft geen systeemcommando te voeren.
+        install_packages(&[]);
+    }
 }

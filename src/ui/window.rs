@@ -413,6 +413,87 @@ fn build_window_content(
 
     page_dash.add(&group_quick);
 
+    // ============================================================
+    // ONBOARDING / WELKOM: installatiestatus + één-klik-installatie
+    // (duidelijke gid voor nieuwe gebruikers, zonder de kracht te beperken)
+    // ============================================================
+    let missing = process::missing_dependencies();
+    let group_onboard = PreferencesGroup::builder()
+        .title(&tr.onb_welcome_title)
+        .description(&tr.onb_welcome_desc)
+        .build();
+
+    // Kern-onderdelen met een live statusregel en één-klik-installatie
+    let status_keys = [
+        process::ZenithDependency::Quickshell,
+        process::ZenithDependency::Hyprland,
+        process::ZenithDependency::Waybar,
+    ];
+    for dep in status_keys {
+        let installed = dep.is_installed();
+        let row = ActionRow::builder()
+            .title(dep.title())
+            .subtitle(if installed { tr.onb_installed.clone() } else { tr.onb_install.clone() })
+            .build();
+        if !installed {
+            let btn_i = Button::builder().label(&tr.onb_install).valign(gtk4::Align::Center).build();
+            btn_i.connect_clicked(move |_| {
+                match dep {
+                    process::ZenithDependency::Quickshell => process::install_quickshell(),
+                    other => process::install_dependency(other),
+                }
+            });
+            row.add_suffix(&btn_i);
+        }
+        group_onboard.add(&row);
+    }
+
+    // Eén-knop "Alles installeren" als er nog iets ontbreekt
+    if !missing.is_empty() {
+        let missing_names: Vec<&str> = missing.iter().map(|d| d.title()).collect();
+        let row_install_all = ActionRow::builder()
+            .title(&tr.onb_install_all)
+            .subtitle(format!("{}: {}", tr.onb_core_status, missing_names.join(", ")))
+            .build();
+        let btn_all = Button::builder().label(&tr.onb_install_all).valign(gtk4::Align::Center).build();
+        btn_all.connect_clicked(move |_| {
+            for d in process::ZenithDependency::ALL {
+                if !d.is_installed() {
+                    process::install_dependency(d);
+                }
+            }
+        });
+        row_install_all.add_suffix(&btn_all);
+        group_onboard.add(&row_install_all);
+    } else {
+        let row_set = ActionRow::builder()
+            .title(&tr.onb_installed)
+            .subtitle(&tr.onb_all_set)
+            .build();
+        group_onboard.add(&row_set);
+    }
+
+    // Power User-vrijheid: directe toegang tot ruwe Quickshell-bestanden & modules
+    let group_power = PreferencesGroup::builder()
+        .title(&tr.onb_power_title)
+        .description(&tr.onb_power_desc)
+        .build();
+    let row_power = ActionRow::builder()
+        .title(&tr.onb_open_power)
+        .subtitle("~/.config/quickshell/ — shell.qml, modules, cards")
+        .build();
+    let btn_power = Button::builder().label(&tr.onb_open_power).valign(gtk4::Align::Center).build();
+    let stack_power = stack.clone();
+    btn_power.connect_clicked(move |_| {
+        stack_power.set_visible_child_name("quickshell");
+    });
+    row_power.add_suffix(&btn_power);
+    group_power.add(&row_power);
+
+    page_dash.add(&group_onboard);
+    page_dash.add(&group_power);
+
+
     let group_dash_bar = PreferencesGroup::builder()
         .title(&tr.sidebar_statusbar)
         .description(&tr.dash_quick_desc)
