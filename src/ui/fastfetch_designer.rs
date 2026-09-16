@@ -85,7 +85,7 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
         .build();
 
     let btn_refresh = Button::builder()
-        .label(&format!("🔄 {}", tr.ff_refresh_preview))
+        .label(format!("🔄 {}", tr.ff_refresh_preview))
         .valign(Align::Center)
         .build();
 
@@ -236,9 +236,10 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
     let cur_pad_top = ff_state.borrow().logo.as_ref().and_then(|l| l.padding.as_ref()).and_then(|p| p.top).unwrap_or(1);
     let row_pad_top = ActionRow::builder()
         .title("Logo Padding Boven")
-        .subtitle(&format!("{} regels", cur_pad_top))
+        .subtitle(format!("{} regels", cur_pad_top))
         .build();
     let s_pad_top = Scale::with_range(Orientation::Horizontal, 0.0, 8.0, 1.0);
+    s_pad_top.set_draw_value(false);
     s_pad_top.set_value(cur_pad_top as f64);
     s_pad_top.set_width_request(140);
     {
@@ -264,9 +265,10 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
     let cur_pad_right = ff_state.borrow().logo.as_ref().and_then(|l| l.padding.as_ref()).and_then(|p| p.right).unwrap_or(2);
     let row_pad_right = ActionRow::builder()
         .title("Logo Padding Rechts")
-        .subtitle(&format!("{} spaties", cur_pad_right))
+        .subtitle(format!("{} spaties", cur_pad_right))
         .build();
     let s_pad_right = Scale::with_range(Orientation::Horizontal, 0.0, 10.0, 1.0);
+    s_pad_right.set_draw_value(false);
     s_pad_right.set_value(cur_pad_right as f64);
     s_pad_right.set_width_request(140);
     {
@@ -295,7 +297,7 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
     // 3. Display & Styling
     // ==========================================
     let group_display = PreferencesGroup::builder()
-        .title(&tr.ff_styling)
+        .title(crate::ui::escape::pango_escape(&tr.ff_styling))
         .description("Pas de scheidingstekenstijl en visuele opmaak aan")
         .build();
 
@@ -332,9 +334,10 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
     let cur_key_w = ff_state.borrow().display.as_ref().and_then(|d| d.key.as_ref()).and_then(|k| k.width).unwrap_or(12);
     let row_key_w = ActionRow::builder()
         .title("Sleutelbreedte (Key Width)")
-        .subtitle(&format!("{} tekens", cur_key_w))
+        .subtitle(format!("{} tekens", cur_key_w))
         .build();
     let s_key_w = Scale::with_range(Orientation::Horizontal, 0.0, 30.0, 1.0);
+    s_key_w.set_draw_value(false);
     s_key_w.set_value(cur_key_w as f64);
     s_key_w.set_width_request(140);
     {
@@ -636,7 +639,7 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
         .build();
 
     let btn_save = Button::builder()
-        .label(&format!("💾 {}", tr.ff_save))
+        .label(format!("💾 {}", tr.ff_save))
         .valign(Align::Center)
         .build();
     btn_save.add_css_class("suggested-action");

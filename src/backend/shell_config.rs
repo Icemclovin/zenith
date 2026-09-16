@@ -119,19 +119,12 @@ impl Default for ShellPanels {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Default)]
 pub struct ShellCustom {
     pub raw_override: bool,
     pub custom_qml_path: Option<String>,
 }
 
-impl Default for ShellCustom {
-    fn default() -> Self {
-        Self {
-            raw_override: false,
-            custom_qml_path: None,
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ControlCenterConfig {
@@ -484,6 +477,37 @@ impl ZenithShellConfig {
         Some(PathBuf::from(home).join(".config/quickshell/modules"))
     }
 
+    /// Ontdek custom QML modulen in een opgegeven map (injecteerbaar voor tests).
+    /// Returnt alleen modulen die nog niet in `existing` zitten en die geen ingebouwde zijn.
+    fn discover_custom_modules_in_dir(
+        dir: &PathBuf,
+        custom_icon: &str,
+        existing: &[ModuleInfo],
+    ) -> Vec<ModuleInfo> {
+        let mut found = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "qml") {
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        if !existing.iter().any(|m| m.id == stem)
+                            && !found.iter().any(|m: &ModuleInfo| m.id == stem)
+                        {
+                            found.push(ModuleInfo {
+                                id: stem.to_string(),
+                                name: format!("✨ Custom: {}", stem),
+                                icon: custom_icon.to_string(),
+                                description: format!("Aangepast QML widget: {}.qml", stem),
+                                is_custom: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        found
+    }
+
     pub fn cards_dir() -> Option<PathBuf> {
         let home = std::env::var("HOME").ok()?;
         Some(PathBuf::from(home).join(".config/quickshell/cards"))
@@ -628,25 +652,11 @@ impl ZenithShellConfig {
 
         // Ontdek custom modules in ~/.config/quickshell/modules/*.qml
         if let Some(dir) = Self::modules_dir() {
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file() && path.extension().map_or(false, |ext| ext == "qml") {
-                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            // Als het nog niet in de lijst staat, is het een custom module
-                            if !list.iter().any(|m| m.id == stem) {
-                                list.push(ModuleInfo {
-                                    id: stem.to_string(),
-                                    name: format!("✨ Custom: {}", stem),
-                                    icon: cfg.custom_icons.custom.clone(),
-                                    description: format!("Aangepast QML widget: {}.qml", stem),
-                                    is_custom: true,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
+            list.extend(Self::discover_custom_modules_in_dir(
+                &dir,
+                &cfg.custom_icons.custom,
+                &list,
+            ));
         }
 
         // Voeg ook gedefinieerde Custom Script modules toe
@@ -765,7 +775,7 @@ impl ZenithShellConfig {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file() && path.extension().map_or(false, |ext| ext == "qml") {
+                    if path.is_file() && path.extension().is_some_and(|ext| ext == "qml") {
                         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                             if stem != "script_card" && !list.iter().any(|m| m.id == stem) {
                                 list.push(ModuleInfo {
@@ -854,7 +864,7 @@ impl ZenithShellConfig {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file() && path.extension().map_or(false, |ext| ext == "qml") {
+                    if path.is_file() && path.extension().is_some_and(|ext| ext == "qml") {
                         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                             let card_stem = stem.strip_suffix("_card").unwrap_or(stem);
                             if !list.iter().any(|m| m.id == card_stem || m.id == stem) {
@@ -949,19 +959,28 @@ mod tests {
 
     #[test]
     fn test_discover_custom_module() {
-        if let Some(dir) = ZenithShellConfig::modules_dir() {
-            let test_custom_path = dir.join("TestCustomProbe.qml");
-            let _ = std::fs::write(&test_custom_path, "import QtQuick\nItem{}\n");
+        // Gebruik een tijdelijk pad in plaats van de live ~/.config map, zodat de
+        // test betrouwbaar werkt, ook in omgevingen waar die map overschrijfbaar/niet
+        // beschrijfbaar is en zonder echte gebruikersconfig te vervuilen.
+        let mut tmp = std::env::temp_dir();
+        let unique = format!("zenith-{}-test-modules", std::process::id());
+        tmp.push(unique);
+        let _ = std::fs::create_dir_all(&tmp);
 
-            let modules = ZenithShellConfig::discover_available_modules();
-            let found = modules.iter().find(|m| m.id == "TestCustomProbe");
-            assert!(found.is_some(), "Custom module TestCustomProbe should be discovered");
-            let m = found.unwrap();
-            assert!(m.is_custom);
-            assert!(m.name.contains("TestCustomProbe"));
+        let custom_path = tmp.join("TestCustomProbe.qml");
+        std::fs::write(&custom_path, "import QtQuick\nItem{}\n")
+            .expect("moet een testbestand kunnen schrijven in de temp map");
 
-            let _ = std::fs::remove_file(test_custom_path);
-        }
+        let existing: Vec<ModuleInfo> = Vec::new();
+        let modules = ZenithShellConfig::discover_custom_modules_in_dir(&tmp, "✨", &existing);
+        let found = modules.iter().find(|m| m.id == "TestCustomProbe");
+        assert!(found.is_some(), "Custom module TestCustomProbe should be discovered");
+        let m = found.unwrap();
+        assert!(m.is_custom);
+        assert!(m.name.contains("TestCustomProbe"));
+
+        let _ = std::fs::remove_file(custom_path);
+        let _ = std::fs::remove_dir(&tmp);
     }
 
     #[test]

@@ -85,9 +85,10 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     let initial_width = shell_state.borrow().control_center.width;
     let row_width = ActionRow::builder()
         .title(&tr.cc_width)
-        .subtitle(&format!("{} px", initial_width))
+        .subtitle(format!("{} px", initial_width))
         .build();
     let s_width = Scale::with_range(Orientation::Horizontal, 280.0, 600.0, 10.0);
+    s_width.set_draw_value(false);
     s_width.set_value(initial_width as f64);
     s_width.set_width_request(160);
     {
@@ -108,9 +109,10 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     let initial_max_h = shell_state.borrow().control_center.max_height;
     let row_max_h = ActionRow::builder()
         .title(&tr.cc_max_height)
-        .subtitle(&format!("{} px", initial_max_h))
+        .subtitle(format!("{} px", initial_max_h))
         .build();
     let s_max_h = Scale::with_range(Orientation::Horizontal, 300.0, 900.0, 20.0);
+    s_max_h.set_draw_value(false);
     s_max_h.set_value(initial_max_h as f64);
     s_max_h.set_width_request(160);
     {
@@ -131,9 +133,10 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     let initial_rad = shell_state.borrow().control_center.border_radius;
     let row_rad = ActionRow::builder()
         .title(&tr.cc_border_radius)
-        .subtitle(&format!("{} px", initial_rad))
+        .subtitle(format!("{} px", initial_rad))
         .build();
     let s_rad = Scale::with_range(Orientation::Horizontal, 0.0, 32.0, 1.0);
+    s_rad.set_draw_value(false);
     s_rad.set_value(initial_rad as f64);
     s_rad.set_width_request(160);
     {
@@ -154,9 +157,10 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     let initial_op = shell_state.borrow().control_center.opacity;
     let row_op = ActionRow::builder()
         .title(&tr.cc_opacity)
-        .subtitle(&format!("{}%", (initial_op * 100.0).round() as i32))
+        .subtitle(format!("{}%", (initial_op * 100.0).round() as i32))
         .build();
     let s_op = Scale::with_range(Orientation::Horizontal, 0.40, 1.00, 0.02);
+    s_op.set_draw_value(false);
     s_op.set_value(initial_op);
     s_op.set_width_request(160);
     {
@@ -293,6 +297,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
 
     let row_interval = ActionRow::builder().title("Polling Interval").subtitle("10 seconden").build();
     let s_interval = Scale::with_range(Orientation::Horizontal, 1.0, 300.0, 1.0);
+    s_interval.set_draw_value(false);
     s_interval.set_value(10.0);
     s_interval.set_width_request(160);
     let r_int_c = row_interval.clone();
@@ -307,7 +312,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     row_click.add_suffix(&entry_card_click);
     group_custom_card.add(&row_click);
 
-    let btn_create_card = Button::builder().label(&tr.cc_create_card).valign(gtk4::Align::Center).build();
+    let btn_create_card = Button::builder().label(crate::ui::escape::pango_escape(&tr.cc_create_card)).valign(gtk4::Align::Center).build();
     btn_create_card.add_css_class("suggested-action");
     {
         let sh_st = Rc::clone(&shell_state);
@@ -365,7 +370,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     // 4. Power User & Test Gereedschap
     // ==========================================
     let group_power = PreferencesGroup::builder()
-        .title("Power User & Directe Bestanden")
+        .title(crate::ui::escape::pango_escape("Power User & Directe Bestanden"))
         .description("Beheer losse QML kaarten direct in je bestandssysteem of test Quickshell IPC")
         .build();
 
@@ -375,7 +380,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
         .build();
     let btn_open_cards = Button::builder().label("📂 Map Openen").valign(gtk4::Align::Center).build();
     btn_open_cards.connect_clicked(|_| {
-        if let Some(home) = std::env::var("HOME").ok() {
+        if let Ok(home) = std::env::var("HOME") {
             let dir = format!("{}/.config/quickshell/cards", home);
             let _ = std::fs::create_dir_all(&dir);
             let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
@@ -392,7 +397,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     {
         let refresh_list = Rc::clone(&refresh_cards_list);
         btn_tmpl.connect_clicked(move |_| {
-            if let Some(home) = std::env::var("HOME").ok() {
+            if let Ok(home) = std::env::var("HOME") {
                 let file_path = format!("{}/.config/quickshell/cards/CustomCard.qml", home);
                 if !std::path::Path::new(&file_path).exists() {
                     let tmpl = r###"import QtQuick
@@ -476,7 +481,10 @@ fn refresh_cards_ui(list_box: &ListBox, shell_state: &Rc<RefCell<ZenithShellConf
             None => format!("Kaart ID: {}", card_id),
         };
 
-        let row = ActionRow::builder().title(&title).subtitle(&desc).build();
+        let row = ActionRow::builder()
+            .title(crate::ui::escape::pango_escape(&title))
+            .subtitle(crate::ui::escape::pango_escape(&desc))
+            .build();
 
         // Knop Omhoog (▲)
         if idx > 0 {

@@ -105,9 +105,10 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> 
     let initial_width = shell_state.borrow().osd.width;
     let row_width = ActionRow::builder()
         .title(&tr.osd_width)
-        .subtitle(&format!("{} px", initial_width))
+        .subtitle(format!("{} px", initial_width))
         .build();
     let s_width = Scale::with_range(Orientation::Horizontal, 160.0, 500.0, 10.0);
+    s_width.set_draw_value(false);
     s_width.set_value(initial_width as f64);
     s_width.set_width_request(160);
     {
@@ -128,9 +129,10 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> 
     let initial_height = shell_state.borrow().osd.height;
     let row_height = ActionRow::builder()
         .title(&tr.osd_height)
-        .subtitle(&format!("{} px", initial_height))
+        .subtitle(format!("{} px", initial_height))
         .build();
     let s_height = Scale::with_range(Orientation::Horizontal, 32.0, 100.0, 4.0);
+    s_height.set_draw_value(false);
     s_height.set_value(initial_height as f64);
     s_height.set_width_request(160);
     {
@@ -151,9 +153,10 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> 
     let initial_timeout = shell_state.borrow().osd.timeout_ms;
     let row_timeout = ActionRow::builder()
         .title(&tr.osd_timeout)
-        .subtitle(&format!("{} ms", initial_timeout))
+        .subtitle(format!("{} ms", initial_timeout))
         .build();
     let s_timeout = Scale::with_range(Orientation::Horizontal, 500.0, 5000.0, 250.0);
+    s_timeout.set_draw_value(false);
     s_timeout.set_value(initial_timeout as f64);
     s_timeout.set_width_request(160);
     {

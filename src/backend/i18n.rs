@@ -34,6 +34,11 @@ impl fmt::Display for Language {
 }
 
 #[derive(Clone, Debug)]
+// Sommige vertaalsleutels zijn bedoeld voor UI-secties die nog niet aan widgets
+// zijn gekoppeld (Thema's, Systeem, enkele algemene acties). Ze worden wél
+// geïndexeerd door `test_all_languages_complete`, dus we verwijderen ze niet en
+// onderdrukken de dead_code-waarschuwing voor deze vertaaldata.
+#[allow(dead_code)]
 pub struct Translations {
     // SIDEBAR
     pub sidebar_dashboard: String,

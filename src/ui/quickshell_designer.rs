@@ -80,7 +80,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
 
     // Apply preset handler
     {
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         let sh_st = Rc::clone(&shell_state);
         let dd = dd_preset.clone();
         let refresh_mod = Rc::clone(&refresh_all_modules);
@@ -332,7 +332,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
 
     // Formulier voor nieuwe scriptmodule
     let row_cs_name = ActionRow::builder()
-        .title("Modulenaam & Icoon")
+        .title(crate::ui::escape::pango_escape("Modulenaam & Icoon"))
         .subtitle("Geef je module een herkenbare naam en emoji-icoon")
         .build();
     let ent_cs_name = Entry::builder()
@@ -366,6 +366,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
         .subtitle("5 seconden")
         .build();
     let s_cs_int = Scale::with_range(Orientation::Horizontal, 1.0, 300.0, 1.0);
+    s_cs_int.set_draw_value(false);
     s_cs_int.set_value(5.0);
     s_cs_int.set_width_request(160);
     {
@@ -488,7 +489,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     dd_style.set_selected(match initial_sh.layout.bar_style.as_str() { "islands" => 1, "minimal" => 2, _ => 0 });
     {
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         dd_style.connect_selected_notify(move |d| {
             let val = match d.selected() { 1 => "islands", 2 => "minimal", _ => "unified" };
             sh_st.borrow_mut().layout.bar_style = val.to_string();
@@ -512,7 +513,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     });
     {
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         dd_pos.connect_selected_notify(move |d| {
             let pos_str = match d.selected() {
                 1 => "bottom",
@@ -532,15 +533,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Hoogte
     let row_h = ActionRow::builder()
         .title(&tr.bar_height)
-        .subtitle(&format!("{} px", initial_sh.layout.height))
+        .subtitle(format!("{} px", initial_sh.layout.height))
         .build();
     let s_h = Scale::with_range(Orientation::Horizontal, 20.0, 64.0, 2.0);
+    s_h.set_draw_value(false);
     s_h.set_value(initial_sh.layout.height as f64);
     s_h.set_width_request(160);
     {
         let r_c = row_h.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_h.connect_value_changed(move |s| {
             let v = s.value().round() as i32;
             r_c.set_subtitle(&format!("{} px", v));
@@ -561,7 +563,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     let sw_flt = Switch::builder().active(initial_sh.layout.floating).valign(gtk4::Align::Center).build();
     {
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         sw_flt.connect_state_set(move |_, active| {
             sh_st.borrow_mut().layout.floating = active;
             st.borrow_mut().qs_floating = active;
@@ -576,15 +578,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Afronding
     let row_rnd = ActionRow::builder()
         .title("Balkafronding (Radius)")
-        .subtitle(&format!("{} px", initial_sh.styling.rounding))
+        .subtitle(format!("{} px", initial_sh.styling.rounding))
         .build();
     let s_rnd = Scale::with_range(Orientation::Horizontal, 0.0, 32.0, 1.0);
+    s_rnd.set_draw_value(false);
     s_rnd.set_value(initial_sh.styling.rounding as f64);
     s_rnd.set_width_request(160);
     {
         let r_c = row_rnd.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_rnd.connect_value_changed(move |s| {
             let v = s.value().round() as i32;
             r_c.set_subtitle(&format!("{} px", v));
@@ -600,15 +603,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Eiland Afronding
     let row_prnd = ActionRow::builder()
         .title("Eiland / Capsule Afronding")
-        .subtitle(&format!("{} px", initial_sh.styling.pill_rounding))
+        .subtitle(format!("{} px", initial_sh.styling.pill_rounding))
         .build();
     let s_prnd = Scale::with_range(Orientation::Horizontal, 0.0, 24.0, 1.0);
+    s_prnd.set_draw_value(false);
     s_prnd.set_value(initial_sh.styling.pill_rounding as f64);
     s_prnd.set_width_request(160);
     {
         let r_c = row_prnd.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_prnd.connect_value_changed(move |s| {
             let v = s.value().round() as i32;
             r_c.set_subtitle(&format!("{} px", v));
@@ -624,15 +628,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Horizontale Marge
     let row_mh = ActionRow::builder()
         .title("Horizontale Marge (Zwevend)")
-        .subtitle(&format!("{} px", initial_sh.styling.margin_h))
+        .subtitle(format!("{} px", initial_sh.styling.margin_h))
         .build();
     let s_mh = Scale::with_range(Orientation::Horizontal, 0.0, 32.0, 1.0);
+    s_mh.set_draw_value(false);
     s_mh.set_value(initial_sh.styling.margin_h as f64);
     s_mh.set_width_request(160);
     {
         let r_c = row_mh.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_mh.connect_value_changed(move |s| {
             let v = s.value().round() as i32;
             r_c.set_subtitle(&format!("{} px", v));
@@ -648,15 +653,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Verticale Marge
     let row_mv = ActionRow::builder()
         .title("Verticale Marge (Zwevend)")
-        .subtitle(&format!("{} px", initial_sh.styling.margin_v))
+        .subtitle(format!("{} px", initial_sh.styling.margin_v))
         .build();
     let s_mv = Scale::with_range(Orientation::Horizontal, 0.0, 24.0, 1.0);
+    s_mv.set_draw_value(false);
     s_mv.set_value(initial_sh.styling.margin_v as f64);
     s_mv.set_width_request(160);
     {
         let r_c = row_mv.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_mv.connect_value_changed(move |s| {
             let v = s.value().round() as i32;
             r_c.set_subtitle(&format!("{} px", v));
@@ -672,15 +678,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Module Spacing
     let row_sp = ActionRow::builder()
         .title("Afstand Tussen Modules (Spacing)")
-        .subtitle(&format!("{} px", initial_sh.styling.module_spacing))
+        .subtitle(format!("{} px", initial_sh.styling.module_spacing))
         .build();
     let s_sp = Scale::with_range(Orientation::Horizontal, 2.0, 24.0, 1.0);
+    s_sp.set_draw_value(false);
     s_sp.set_value(initial_sh.styling.module_spacing as f64);
     s_sp.set_width_request(160);
     {
         let r_c = row_sp.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_sp.connect_value_changed(move |s| {
             let v = s.value().round() as i32;
             r_c.set_subtitle(&format!("{} px", v));
@@ -696,15 +703,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Randdikte
     let row_bw = ActionRow::builder()
         .title("Randdikte (Border)")
-        .subtitle(&format!("{} px", initial_sh.styling.border_width))
+        .subtitle(format!("{} px", initial_sh.styling.border_width))
         .build();
     let s_bw = Scale::with_range(Orientation::Horizontal, 0.0, 6.0, 1.0);
+    s_bw.set_draw_value(false);
     s_bw.set_value(initial_sh.styling.border_width as f64);
     s_bw.set_width_request(160);
     {
         let r_c = row_bw.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_bw.connect_value_changed(move |s| {
             let v = s.value().round() as i32;
             r_c.set_subtitle(&format!("{} px", v));
@@ -723,7 +731,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // 4. Kleur & Transparantie
     // ========================================================
     let group_colors = PreferencesGroup::builder()
-        .title("Kleuren & Transparantie")
+        .title(crate::ui::escape::pango_escape("Kleuren & Transparantie"))
         .description("Achtergronden, contrast, accenten en lettergrootte")
         .build();
 
@@ -732,7 +740,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     let ent_bg = Entry::builder().text(&initial_sh.styling.background).width_chars(10).valign(gtk4::Align::Center).build();
     {
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         ent_bg.connect_changed(move |e| {
             let val = e.text().to_string();
             sh_st.borrow_mut().styling.background = val.clone();
@@ -747,15 +755,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Transparantie Balk
     let row_op = ActionRow::builder()
         .title("Balk Dekking (Opacity)")
-        .subtitle(&format!("{:.0}%", initial_sh.styling.opacity * 100.0))
+        .subtitle(format!("{:.0}%", initial_sh.styling.opacity * 100.0))
         .build();
     let s_op = Scale::with_range(Orientation::Horizontal, 0.10, 1.0, 0.05);
+    s_op.set_draw_value(false);
     s_op.set_value(initial_sh.styling.opacity);
     s_op.set_width_request(160);
     {
         let r_c = row_op.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_op.connect_value_changed(move |s| {
             let v = s.value();
             r_c.set_subtitle(&format!("{:.0}%", v * 100.0));
@@ -773,7 +782,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     let ent_pbg = Entry::builder().text(&initial_sh.styling.pill_bg).width_chars(10).valign(gtk4::Align::Center).build();
     {
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         ent_pbg.connect_changed(move |e| {
             let val = e.text().to_string();
             sh_st.borrow_mut().styling.pill_bg = val.clone();
@@ -788,15 +797,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Eiland Transparantie
     let row_pop = ActionRow::builder()
         .title("Eiland Dekking (Pill Opacity)")
-        .subtitle(&format!("{:.0}%", initial_sh.styling.pill_opacity * 100.0))
+        .subtitle(format!("{:.0}%", initial_sh.styling.pill_opacity * 100.0))
         .build();
     let s_pop = Scale::with_range(Orientation::Horizontal, 0.10, 1.0, 0.05);
+    s_pop.set_draw_value(false);
     s_pop.set_value(initial_sh.styling.pill_opacity);
     s_pop.set_width_request(160);
     {
         let r_c = row_pop.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_pop.connect_value_changed(move |s| {
             let v = s.value();
             r_c.set_subtitle(&format!("{:.0}%", v * 100.0));
@@ -814,7 +824,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     let ent_acc = Entry::builder().text(&initial_sh.styling.accent).width_chars(10).valign(gtk4::Align::Center).build();
     {
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         ent_acc.connect_changed(move |e| {
             let val = e.text().to_string();
             sh_st.borrow_mut().styling.accent = val.clone();
@@ -827,11 +837,11 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     group_colors.add(&row_acc);
 
     // Tekstkleur
-    let row_tc = ActionRow::builder().title("Tekst- & Icoonkleur").subtitle("Voorgrondkleur voor tekstlabels").build();
+    let row_tc = ActionRow::builder().title(crate::ui::escape::pango_escape("Tekst- & Icoonkleur")).subtitle("Voorgrondkleur voor tekstlabels").build();
     let ent_tc = Entry::builder().text(&initial_sh.styling.text_color).width_chars(10).valign(gtk4::Align::Center).build();
     {
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         ent_tc.connect_changed(move |e| {
             let val = e.text().to_string();
             sh_st.borrow_mut().styling.text_color = val.clone();
@@ -848,7 +858,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     let ent_bc = Entry::builder().text(&initial_sh.styling.border_color).width_chars(10).valign(gtk4::Align::Center).build();
     {
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         ent_bc.connect_changed(move |e| {
             let val = e.text().to_string();
             sh_st.borrow_mut().styling.border_color = val.clone();
@@ -863,15 +873,16 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // Lettergrootte
     let row_fs = ActionRow::builder()
         .title("Lettergrootte (Font Size)")
-        .subtitle(&format!("{} pt", initial_sh.styling.font_size))
+        .subtitle(format!("{} pt", initial_sh.styling.font_size))
         .build();
     let s_fs = Scale::with_range(Orientation::Horizontal, 8.0, 18.0, 1.0);
+    s_fs.set_draw_value(false);
     s_fs.set_value(initial_sh.styling.font_size as f64);
     s_fs.set_width_request(160);
     {
         let r_c = row_fs.clone();
         let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(&state);
+        let st = Rc::clone(state);
         s_fs.connect_value_changed(move |s| {
             let v = s.value().round() as i32;
             r_c.set_subtitle(&format!("{} pt", v));
@@ -890,7 +901,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // 5. Panels & On-Screen Displays (OSD)
     // ========================================================
     let group_panels = PreferencesGroup::builder()
-        .title("Panels & On-Screen Displays (OSD)")
+        .title(crate::ui::escape::pango_escape("Panels & On-Screen Displays (OSD)"))
         .description("Schakel dynamische overlays, popups en systeemnotificaties in of uit")
         .build();
 
@@ -968,7 +979,7 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
     // 6. Power User Hub & Grenzeloos Hacken
     // ========================================================
     let group_power = PreferencesGroup::builder()
-        .title("Power User Hub & Custom Modules")
+        .title(crate::ui::escape::pango_escape("Power User Hub & Custom Modules"))
         .description("Directe toegang voor ontwikkelaars: bewerk ruwe bestanden of voeg eigen QML componenten toe zonder beperkingen")
         .build();
 
@@ -1149,7 +1160,10 @@ fn refresh_slot(
             None => format!("Module ID: {}", mod_id),
         };
 
-        let row = ActionRow::builder().title(&title).subtitle(&desc).build();
+        let row = ActionRow::builder()
+            .title(crate::ui::escape::pango_escape(&title))
+            .subtitle(crate::ui::escape::pango_escape(&desc))
+            .build();
 
         // Knop Omhoog (▲)
         if idx > 0 {
@@ -1258,7 +1272,10 @@ fn refresh_scripts_list(
             script.command, script.interval_seconds, click_info
         );
 
-        let row = ActionRow::builder().title(&title).subtitle(&desc).build();
+        let row = ActionRow::builder()
+            .title(crate::ui::escape::pango_escape(&title))
+            .subtitle(crate::ui::escape::pango_escape(&desc))
+            .build();
 
         // Knop Verwijderen (✖)
         let btn_remove = Button::builder()

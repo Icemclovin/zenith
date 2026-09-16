@@ -35,15 +35,15 @@ pub fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
 
     let h;
     let s;
-    if (max - min).abs() < std::f32::EPSILON {
+    if (max - min).abs() < f32::EPSILON {
         h = 0.0;
         s = 0.0;
     } else {
         let d = max - min;
         s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
-        h = if (max - r).abs() < std::f32::EPSILON {
+        h = if (max - r).abs() < f32::EPSILON {
             (g - b) / d + (if g < b { 6.0 } else { 0.0 })
-        } else if (max - g).abs() < std::f32::EPSILON {
+        } else if (max - g).abs() < f32::EPSILON {
             (b - r) / d + 2.0
         } else {
             (r - g) / d + 4.0
@@ -53,7 +53,7 @@ pub fn rgb_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
 }
 
 pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
-    if s.abs() < std::f32::EPSILON {
+    if s.abs() < f32::EPSILON {
         let v = (l * 255.0).round() as u8;
         return (v, v, v);
     }

@@ -1,7 +1,7 @@
 use gtk4::gdk::RGBA;
 use gtk4::prelude::*;
 use gtk4::{
-    Box, Button, ColorDialog, ColorDialogButton, DropDown, FileDialog, Image, Label, ListBox,
+    Box, Button, ColorDialog, ColorDialogButton, DropDown, Entry, FileDialog, Image, Label, ListBox,
     ListBoxRow, Orientation, Scale, StringList, Switch,
 };
 use libadwaita::prelude::*;
@@ -108,7 +108,7 @@ fn update_swatches_chips(swatch_box: &Box, bg: &str, surface: &str, accent: &str
     ];
     for (role, hex) in swatches_info {
         let chip = Label::builder()
-            .label(&format!(" {} ", hex))
+            .label(format!(" {} ", hex))
             .tooltip_text(role)
             .valign(gtk4::Align::Center)
             .build();
@@ -170,7 +170,7 @@ fn build_window_content(
 
     // Status Pill Badge (Quickshell Daemon Status)
     let qs_pill = Label::builder()
-        .label(&format!("● {}", tr.status_active))
+        .label(format!("● {}", tr.status_active))
         .halign(gtk4::Align::Start)
         .css_classes(["status-pill-active"])
         .build();
@@ -244,7 +244,7 @@ fn build_window_content(
         img.set_pixel_size(16);
 
         let lbl = Label::builder()
-            .label(&item.title)
+            .label(crate::ui::escape::pango_escape(&item.title))
             .halign(gtk4::Align::Start)
             .hexpand(true)
             .build();
@@ -369,7 +369,7 @@ fn build_window_content(
         .title(&tr.dash_cc_title)
         .subtitle(&tr.dash_cc_sub)
         .build();
-    let btn_cc_test = Button::builder().label(&format!("🚀 {}", tr.dash_test_cc)).valign(gtk4::Align::Center).build();
+    let btn_cc_test = Button::builder().label(format!("🚀 {}", tr.dash_test_cc)).valign(gtk4::Align::Center).build();
     btn_cc_test.connect_clicked(|_| {
         process::execute_cmd("quickshell ipc call controlCenter toggle");
     });
@@ -380,7 +380,7 @@ fn build_window_content(
         .title(&tr.dash_osd_title)
         .subtitle(&tr.dash_osd_sub)
         .build();
-    let btn_osd_test = Button::builder().label(&format!("🔔 {}", tr.dash_test_osd)).valign(gtk4::Align::Center).build();
+    let btn_osd_test = Button::builder().label(format!("🔔 {}", tr.dash_test_osd)).valign(gtk4::Align::Center).build();
     btn_osd_test.connect_clicked(|_| {
         process::execute_cmd("quickshell ipc call osd popup '⚡' 'Zenith OS' 0.85");
     });
@@ -391,7 +391,7 @@ fn build_window_content(
         .title(&tr.dash_hypr_title)
         .subtitle(&tr.dash_hypr_sub)
         .build();
-    let btn_reload_hypr = Button::builder().label(&format!("🔄 {}", tr.dash_reload_hypr)).valign(gtk4::Align::Center).build();
+    let btn_reload_hypr = Button::builder().label(format!("🔄 {}", tr.dash_reload_hypr)).valign(gtk4::Align::Center).build();
     btn_reload_hypr.connect_clicked(|_| {
         process::execute_cmd("hyprctl reload");
     });
@@ -402,8 +402,8 @@ fn build_window_content(
         .title(&tr.dash_restart_bar)
         .subtitle("Quickshell / Waybar daemon")
         .build();
-    let btn_restart_bar = Button::builder().label(&format!("⚡ {}", tr.dash_restart_bar)).valign(gtk4::Align::Center).build();
-    let st_rbar = Rc::clone(&state);
+    let btn_restart_bar = Button::builder().label(format!("⚡ {}", tr.dash_restart_bar)).valign(gtk4::Align::Center).build();
+    let st_rbar = Rc::clone(state);
     btn_restart_bar.connect_clicked(move |_| {
         let active = st_rbar.borrow().active_bar.clone();
         process::set_active_bar(&active);
@@ -421,7 +421,7 @@ fn build_window_content(
     let bar_model_dash = StringList::new(&["Waybar", "Quickshell", "Geen"]);
     let row_dash_bar = ComboRow::builder().title(tr.dash_active_bar.as_str()).model(&bar_model_dash).build();
     row_dash_bar.set_selected(match initial_cfg.active_bar.as_str() { "quickshell" => 1, "none" => 2, _ => 0 });
-    let st_dbar = Rc::clone(&state);
+    let st_dbar = Rc::clone(state);
     row_dash_bar.connect_selected_notify(move |r| {
         let choice = match r.selected() { 1 => "quickshell", 2 => "none", _ => "waybar" };
         process::set_active_bar(choice);
@@ -461,7 +461,7 @@ fn build_window_content(
     // Live Kleurenoverzicht (Swatches)
     let row_swatches = ActionRow::builder()
         .title(&tr.palette_current)
-        .subtitle(&format!("Accent: {} • Achtergrond: {}", shell_cfg.styling.accent, shell_cfg.styling.background))
+        .subtitle(format!("Accent: {} • Achtergrond: {}", shell_cfg.styling.accent, shell_cfg.styling.background))
         .build();
 
     let swatch_box = Box::new(Orientation::Horizontal, 6);
@@ -612,14 +612,15 @@ fn build_window_content(
     // ========================================================
     let page_hypr = PreferencesPage::new();
 
-    let group_geom = PreferencesGroup::builder().title(&tr.hypr_geometry).description(&tr.hypr_geom_desc).build();
+    let group_geom = PreferencesGroup::builder().title(crate::ui::escape::pango_escape(&tr.hypr_geometry)).description(&tr.hypr_geom_desc).build();
 
-    let row_out = ActionRow::builder().title(&tr.hypr_outer_gaps).subtitle(&format!("{} px", initial_cfg.gaps_out)).build();
+    let row_out = ActionRow::builder().title(&tr.hypr_outer_gaps).subtitle(format!("{} px", initial_cfg.gaps_out)).build();
     let s_out = Scale::with_range(Orientation::Horizontal, 0.0, 40.0, 1.0);
+    s_out.set_draw_value(false);
     s_out.set_value(initial_cfg.gaps_out as f64);
     s_out.set_width_request(160);
     let r_out_c = row_out.clone();
-    let st_out = Rc::clone(&state);
+    let st_out = Rc::clone(state);
     s_out.connect_value_changed(move |s| {
         let v = s.value().round() as i32;
         r_out_c.set_subtitle(&format!("{} px", v));
@@ -630,12 +631,13 @@ fn build_window_content(
     row_out.add_suffix(&s_out);
     group_geom.add(&row_out);
 
-    let row_in = ActionRow::builder().title(&tr.hypr_inner_gaps).subtitle(&format!("{} px", initial_cfg.gaps_in)).build();
+    let row_in = ActionRow::builder().title(&tr.hypr_inner_gaps).subtitle(format!("{} px", initial_cfg.gaps_in)).build();
     let s_in = Scale::with_range(Orientation::Horizontal, 0.0, 30.0, 1.0);
+    s_in.set_draw_value(false);
     s_in.set_value(initial_cfg.gaps_in as f64);
     s_in.set_width_request(160);
     let r_in_c = row_in.clone();
-    let st_in = Rc::clone(&state);
+    let st_in = Rc::clone(state);
     s_in.connect_value_changed(move |s| {
         let v = s.value().round() as i32;
         r_in_c.set_subtitle(&format!("{} px", v));
@@ -646,12 +648,13 @@ fn build_window_content(
     row_in.add_suffix(&s_in);
     group_geom.add(&row_in);
 
-    let row_border = ActionRow::builder().title(&tr.hypr_border_width).subtitle(&format!("{} px", initial_cfg.border_size)).build();
+    let row_border = ActionRow::builder().title(&tr.hypr_border_width).subtitle(format!("{} px", initial_cfg.border_size)).build();
     let s_border = Scale::with_range(Orientation::Horizontal, 0.0, 10.0, 1.0);
+    s_border.set_draw_value(false);
     s_border.set_value(initial_cfg.border_size as f64);
     s_border.set_width_request(160);
     let r_b_c = row_border.clone();
-    let st_border = Rc::clone(&state);
+    let st_border = Rc::clone(state);
     s_border.connect_value_changed(move |s| {
         let v = s.value().round() as i32;
         r_b_c.set_subtitle(&format!("{} px", v));
@@ -662,12 +665,13 @@ fn build_window_content(
     row_border.add_suffix(&s_border);
     group_geom.add(&row_border);
 
-    let row_round = ActionRow::builder().title(&tr.hypr_corner_rounding).subtitle(&format!("{} px", initial_cfg.rounding)).build();
+    let row_round = ActionRow::builder().title(&tr.hypr_corner_rounding).subtitle(format!("{} px", initial_cfg.rounding)).build();
     let s_round = Scale::with_range(Orientation::Horizontal, 0.0, 30.0, 1.0);
+    s_round.set_draw_value(false);
     s_round.set_value(initial_cfg.rounding as f64);
     s_round.set_width_request(160);
     let r_rnd_c = row_round.clone();
-    let st_rnd = Rc::clone(&state);
+    let st_rnd = Rc::clone(state);
     s_round.connect_value_changed(move |s| {
         let v = s.value().round() as i32;
         r_rnd_c.set_subtitle(&format!("{} px", v));
@@ -682,7 +686,7 @@ fn build_window_content(
     let c_dialog = ColorDialog::builder().title("Border Color").with_alpha(false).build();
     let c_btn = ColorDialogButton::builder().dialog(&c_dialog).valign(gtk4::Align::Center).build();
     c_btn.set_rgba(&hex_to_rgba(&initial_cfg.active_border_color));
-    let st_col = Rc::clone(&state);
+    let st_col = Rc::clone(state);
     c_btn.connect_notify_local(Some("rgba"), move |b, _| {
         let r = b.rgba();
         let hex = format!("{:02x}{:02x}{:02x}", (r.red() * 255.0) as u8, (r.green() * 255.0) as u8, (r.blue() * 255.0) as u8);
@@ -697,12 +701,13 @@ fn build_window_content(
 
     let group_opacity = PreferencesGroup::builder().title(&tr.hypr_transparency).description(&tr.hypr_trans_desc).build();
 
-    let row_act_op = ActionRow::builder().title(&tr.hypr_active_opacity).subtitle(&format!("{:.0}%", initial_cfg.active_opacity * 100.0)).build();
+    let row_act_op = ActionRow::builder().title(&tr.hypr_active_opacity).subtitle(format!("{:.0}%", initial_cfg.active_opacity * 100.0)).build();
     let s_act_op = Scale::with_range(Orientation::Horizontal, 0.2, 1.0, 0.05);
+    s_act_op.set_draw_value(false);
     s_act_op.set_value(initial_cfg.active_opacity);
     s_act_op.set_width_request(160);
     let r_aop_c = row_act_op.clone();
-    let st_aop = Rc::clone(&state);
+    let st_aop = Rc::clone(state);
     s_act_op.connect_value_changed(move |s| {
         let v = s.value();
         r_aop_c.set_subtitle(&format!("{:.0}%", v * 100.0));
@@ -713,12 +718,13 @@ fn build_window_content(
     row_act_op.add_suffix(&s_act_op);
     group_opacity.add(&row_act_op);
 
-    let row_inact_op = ActionRow::builder().title(&tr.hypr_inactive_opacity).subtitle(&format!("{:.0}%", initial_cfg.inactive_opacity * 100.0)).build();
+    let row_inact_op = ActionRow::builder().title(&tr.hypr_inactive_opacity).subtitle(format!("{:.0}%", initial_cfg.inactive_opacity * 100.0)).build();
     let s_inact_op = Scale::with_range(Orientation::Horizontal, 0.2, 1.0, 0.05);
+    s_inact_op.set_draw_value(false);
     s_inact_op.set_value(initial_cfg.inactive_opacity);
     s_inact_op.set_width_request(160);
     let r_iop_c = row_inact_op.clone();
-    let st_iop = Rc::clone(&state);
+    let st_iop = Rc::clone(state);
     s_inact_op.connect_value_changed(move |s| {
         let v = s.value();
         r_iop_c.set_subtitle(&format!("{:.0}%", v * 100.0));
@@ -730,11 +736,11 @@ fn build_window_content(
     group_opacity.add(&row_inact_op);
     page_hypr.add(&group_opacity);
 
-    let group_fx = PreferencesGroup::builder().title(&tr.hypr_effects).description(&tr.hypr_effects_desc).build();
+    let group_fx = PreferencesGroup::builder().title(crate::ui::escape::pango_escape(&tr.hypr_effects)).description(&tr.hypr_effects_desc).build();
 
     let row_blur = ActionRow::builder().title(&tr.hypr_blur).subtitle("Blur background").build();
     let sw_blur = Switch::builder().active(initial_cfg.blur_enabled).valign(gtk4::Align::Center).build();
-    let st_blur = Rc::clone(&state);
+    let st_blur = Rc::clone(state);
     sw_blur.connect_state_set(move |_, active| {
         hyprland::set_blur_enabled(active);
         st_blur.borrow_mut().blur_enabled = active;
@@ -744,12 +750,13 @@ fn build_window_content(
     row_blur.add_suffix(&sw_blur);
     group_fx.add(&row_blur);
 
-    let row_bsize = ActionRow::builder().title(&tr.hypr_blur_intensity).subtitle(&format!("{} px", initial_cfg.blur_size)).build();
+    let row_bsize = ActionRow::builder().title(&tr.hypr_blur_intensity).subtitle(format!("{} px", initial_cfg.blur_size)).build();
     let s_bsize = Scale::with_range(Orientation::Horizontal, 1.0, 20.0, 1.0);
+    s_bsize.set_draw_value(false);
     s_bsize.set_value(initial_cfg.blur_size as f64);
     s_bsize.set_width_request(160);
     let r_bs_c = row_bsize.clone();
-    let st_bs = Rc::clone(&state);
+    let st_bs = Rc::clone(state);
     s_bsize.connect_value_changed(move |s| {
         let v = s.value().round() as i32;
         r_bs_c.set_subtitle(&format!("{} px", v));
@@ -762,7 +769,7 @@ fn build_window_content(
 
     let row_shd = ActionRow::builder().title(&tr.hypr_shadows).subtitle("Window shadow").build();
     let sw_shd = Switch::builder().active(initial_cfg.shadow_enabled).valign(gtk4::Align::Center).build();
-    let st_shd = Rc::clone(&state);
+    let st_shd = Rc::clone(state);
     sw_shd.connect_state_set(move |_, active| {
         hyprland::set_shadow_enabled(active);
         st_shd.borrow_mut().shadow_enabled = active;
@@ -774,7 +781,7 @@ fn build_window_content(
 
     let row_anim = ActionRow::builder().title(&tr.hypr_animations).subtitle("Window animations").build();
     let sw_anim = Switch::builder().active(initial_cfg.animations_enabled).valign(gtk4::Align::Center).build();
-    let st_anim = Rc::clone(&state);
+    let st_anim = Rc::clone(state);
     sw_anim.connect_state_set(move |_, active| {
         hyprland::set_animations_enabled(active);
         st_anim.borrow_mut().animations_enabled = active;
@@ -793,8 +800,8 @@ fn build_window_content(
             let current_mode = format!("{}x{}@{:.2}Hz", mon.width, mon.height, mon.refresh_rate);
 
             let group_mon = PreferencesGroup::builder()
-                .title(&format!("{}: {}", tr.hypr_display, mon_name))
-                .description(&format!("{}: {}", tr.hypr_display_desc, current_mode))
+                .title(format!("{}: {}", tr.hypr_display, mon_name))
+                .description(format!("{}: {}", tr.hypr_display_desc, current_mode))
                 .build();
 
             let mut mode_strings: Vec<String> = mon.available_modes.clone();
@@ -802,7 +809,7 @@ fn build_window_content(
                 mode_strings.push(format!("{}x{}@{:.2}Hz", mon.width, mon.height, mon.refresh_rate));
             }
             let mode_model = StringList::new(&mode_strings.iter().map(|s| s.as_str()).collect::<Vec<&str>>());
-            let row_res = ComboRow::builder().title(&tr.hypr_display_mode).model(&mode_model).build();
+            let row_res = ComboRow::builder().title(crate::ui::escape::pango_escape(&tr.hypr_display_mode)).model(&mode_model).build();
             if let Some(pos) = mode_strings.iter().position(|m| m == &current_mode) {
                 row_res.set_selected(pos as u32);
             }
@@ -817,8 +824,9 @@ fn build_window_content(
             });
             group_mon.add(&row_res);
 
-            let row_scale = ActionRow::builder().title(&tr.hypr_display_scale).subtitle(&format!("{:.2}x", mon.scale)).build();
+            let row_scale = ActionRow::builder().title(&tr.hypr_display_scale).subtitle(format!("{:.2}x", mon.scale)).build();
             let s_scale = Scale::with_range(Orientation::Horizontal, 1.0, 2.5, 0.25);
+    s_scale.set_draw_value(false);
             s_scale.set_value(mon.scale);
             s_scale.set_width_request(160);
             let r_scl_c = row_scale.clone();
@@ -862,8 +870,9 @@ fn build_window_content(
     row_pos.add_suffix(&dd_pos);
     group_wb_layout.add(&row_pos);
 
-    let row_h = ActionRow::builder().title("Balk Hoogte").subtitle(&format!("{} px", initial_cfg.waybar_height)).build();
+    let row_h = ActionRow::builder().title("Balk Hoogte").subtitle(format!("{} px", initial_cfg.waybar_height)).build();
     let s_h = Scale::with_range(Orientation::Horizontal, 20.0, 56.0, 2.0);
+    s_h.set_draw_value(false);
     s_h.set_value(initial_cfg.waybar_height as f64);
     s_h.set_width_request(160);
     let r_h_c = row_h.clone();
@@ -896,8 +905,9 @@ fn build_window_content(
     row_wb_bg.add_suffix(&c_wb_btn);
     group_wb_layout.add(&row_wb_bg);
 
-    let row_wb_rnd = ActionRow::builder().title("Balk Afronding").subtitle(&format!("{} px", initial_cfg.waybar_rounding)).build();
+    let row_wb_rnd = ActionRow::builder().title("Balk Afronding").subtitle(format!("{} px", initial_cfg.waybar_rounding)).build();
     let s_wb_rnd = Scale::with_range(Orientation::Horizontal, 0.0, 30.0, 1.0);
+    s_wb_rnd.set_draw_value(false);
     s_wb_rnd.set_value(initial_cfg.waybar_rounding as f64);
     s_wb_rnd.set_width_request(160);
     let r_wrnd_c = row_wb_rnd.clone();
@@ -960,8 +970,9 @@ fn build_window_content(
     row_k_bg.add_suffix(&btn_k_bg);
     group_kitty.add(&row_k_bg);
 
-    let row_k_op = ActionRow::builder().title(&tr.theme_window_trans).subtitle(&format!("{:.0}%", initial_cfg.kitty_opacity * 100.0)).build();
+    let row_k_op = ActionRow::builder().title(&tr.theme_window_trans).subtitle(format!("{:.0}%", initial_cfg.kitty_opacity * 100.0)).build();
     let s_k_op = Scale::with_range(Orientation::Horizontal, 0.4, 1.0, 0.05);
+    s_k_op.set_draw_value(false);
     s_k_op.set_value(initial_cfg.kitty_opacity);
     s_k_op.set_width_request(160);
     let r_kop_c = row_k_op.clone();
@@ -979,8 +990,9 @@ fn build_window_content(
     row_k_op.add_suffix(&s_k_op);
     group_kitty.add(&row_k_op);
 
-    let row_k_font = ActionRow::builder().title(&tr.theme_font_size).subtitle(&format!("{:.1} pt", initial_cfg.kitty_font_size)).build();
+    let row_k_font = ActionRow::builder().title(&tr.theme_font_size).subtitle(format!("{:.1} pt", initial_cfg.kitty_font_size)).build();
     let s_k_font = Scale::with_range(Orientation::Horizontal, 8.0, 20.0, 0.5);
+    s_k_font.set_draw_value(false);
     s_k_font.set_value(initial_cfg.kitty_font_size);
     s_k_font.set_width_request(160);
     let r_kfont_c = row_k_font.clone();
@@ -1019,8 +1031,9 @@ fn build_window_content(
     row_r_bg.add_suffix(&btn_r_bg);
     group_rofi.add(&row_r_bg);
 
-    let row_r_rnd = ActionRow::builder().title(&tr.theme_rounding).subtitle(&format!("{} px", initial_cfg.rofi_rounding)).build();
+    let row_r_rnd = ActionRow::builder().title(&tr.theme_rounding).subtitle(format!("{} px", initial_cfg.rofi_rounding)).build();
     let s_r_rnd = Scale::with_range(Orientation::Horizontal, 0.0, 30.0, 1.0);
+    s_r_rnd.set_draw_value(false);
     s_r_rnd.set_value(initial_cfg.rofi_rounding as f64);
     s_r_rnd.set_width_request(160);
     let r_rrnd_c = row_r_rnd.clone();
@@ -1081,13 +1094,74 @@ fn build_window_content(
     group_tools.add(&row_shell);
 
     page_themes.add(&group_tools);
-    stack.add_titled(&page_themes, Some("themes"), &tr.sidebar_themes);
+
+    // GTK / systeemthema
+    let group_gtk = PreferencesGroup::builder().title(&tr.theme_gtk_theme).build();
+
+    let row_gtk_theme = ActionRow::builder().title(&tr.theme_gtk_theme).build();
+    let ent_gtk_theme = Entry::builder().valign(gtk4::Align::Center).text(gsettings_get("gtk-theme").as_str()).build();
+    ent_gtk_theme.set_width_chars(14);
+    ent_gtk_theme.connect_activate(move |e| {
+        gsettings_set("gtk-theme", e.text().as_str());
+    });
+    row_gtk_theme.add_suffix(&ent_gtk_theme);
+    group_gtk.add(&row_gtk_theme);
+
+    let row_icon_theme = ActionRow::builder().title(&tr.theme_icon_theme).build();
+    let ent_icon_theme = Entry::builder().valign(gtk4::Align::Center).text(gsettings_get("icon-theme").as_str()).build();
+    ent_icon_theme.set_width_chars(14);
+    ent_icon_theme.connect_activate(move |e| {
+        gsettings_set("icon-theme", e.text().as_str());
+    });
+    row_icon_theme.add_suffix(&ent_icon_theme);
+    group_gtk.add(&row_icon_theme);
+
+    let row_cursor = ActionRow::builder().title(&tr.theme_cursor).build();
+    let ent_cursor = Entry::builder().valign(gtk4::Align::Center).text(gsettings_get("cursor-theme").as_str()).build();
+    ent_cursor.set_width_chars(14);
+    ent_cursor.connect_activate(move |e| {
+        gsettings_set("cursor-theme", e.text().as_str());
+    });
+    row_cursor.add_suffix(&ent_cursor);
+    group_gtk.add(&row_cursor);
+
+    let row_font = ActionRow::builder().title(&tr.theme_font).build();
+    let ent_font = Entry::builder().valign(gtk4::Align::Center).text(gsettings_get("font-name").as_str()).build();
+    ent_font.set_width_chars(16);
+    ent_font.connect_activate(move |e| {
+        gsettings_set("font-name", e.text().as_str());
+    });
+    row_font.add_suffix(&ent_font);
+    group_gtk.add(&row_font);
+
+    page_themes.add(&group_gtk);
+
+    // Wijzigingen toepassen
+    let group_apply = PreferencesGroup::builder().title(&tr.theme_apply).build();
+    let row_apply = ActionRow::builder()
+        .title(&tr.common_apply)
+        .subtitle(&tr.theme_apply)
+        .build();
+    let btn_apply = Button::builder().label(&tr.theme_apply).valign(gtk4::Align::Center).build();
+    let st_apply = Rc::clone(state);
+    let common_apply_label = tr.common_apply.clone();
+    btn_apply.connect_clicked(move |b| {
+        config::save_config(&st_apply.borrow());
+        themes::update_quickshell(&st_apply.borrow());
+        waybar::reload_waybar();
+        b.set_label(&common_apply_label);
+    });
+    row_apply.add_suffix(&btn_apply);
+    group_apply.add(&row_apply);
+    page_themes.add(&group_apply);
+
+    stack.add_titled(&page_themes, Some("themes"), &crate::ui::escape::pango_escape(&tr.sidebar_themes));
 
     // ========================================================
     // PAGINA 7: Iconen & Emoji's
     // ========================================================
     let page_icons = crate::ui::icon_studio::build_icon_studio_page(&tr);
-    stack.add_titled(&page_icons, Some("icons"), &tr.icons_title);
+    stack.add_titled(&page_icons, Some("icons"), &crate::ui::escape::pango_escape(&tr.icons_title));
 
     // ========================================================
     // PAGINA 8: Fastfetch Visual Studio
@@ -1099,7 +1173,7 @@ fn build_window_content(
     // PAGINA 9: Systeem & Tools
     // ========================================================
     let page_system = PreferencesPage::new();
-    let group_sys = PreferencesGroup::builder().title(&tr.sidebar_system).build();
+    let group_sys = PreferencesGroup::builder().title(crate::ui::escape::pango_escape(&tr.sidebar_system)).build();
 
     let row_dnd = ActionRow::builder().title(&tr.sys_dnd_title).subtitle(&tr.sys_dnd_sub).build();
     let sw_dnd = Switch::builder().valign(gtk4::Align::Center).build();
@@ -1143,9 +1217,77 @@ fn build_window_content(
     });
     row_wall.add_suffix(&btn_wall);
     group_sys.add(&row_wall);
-
     page_system.add(&group_sys);
-    stack.add_titled(&page_system, Some("system"), &tr.sidebar_system);
+
+    // Toetsenbord sneltoetsen
+    let group_keys = PreferencesGroup::builder().title(&tr.sys_keybinds).build();
+    let row_keys = ActionRow::builder()
+        .title(&tr.sys_keybinds)
+        .subtitle("~/.config/hypr/hyprland.conf")
+        .build();
+    let btn_keys = Button::builder().label(&tr.common_open_folder).valign(gtk4::Align::Center).build();
+    let cfg_path_home = std::env::var("HOME").unwrap_or_default();
+    let hypr_conf_path = std::path::PathBuf::from(&cfg_path_home).join(".config/hypr/hyprland.conf");
+    btn_keys.connect_clicked(move |_| {
+        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "xdg-open".to_string());
+        process::execute_cmd(&format!(
+            "{} {} &",
+            editor,
+            hypr_conf_path.to_string_lossy()
+        ));
+    });
+    row_keys.add_suffix(&btn_keys);
+    group_keys.add(&row_keys);
+    page_system.add(&group_keys);
+
+    // Autostart applicaties
+    let group_autostart = PreferencesGroup::builder().title(&tr.sys_autostart).build();
+    let row_autostart = ActionRow::builder()
+        .title(&tr.sys_autostart)
+        .subtitle("~/.config/autostart")
+        .build();
+    let btn_autostart = Button::builder().label(&tr.common_open_folder).valign(gtk4::Align::Center).build();
+    let autostart_dir = std::path::PathBuf::from(&cfg_path_home).join(".config/autostart");
+    if !autostart_dir.exists() {
+        let _ = std::fs::create_dir_all(&autostart_dir);
+    }
+    let autostart_dir_clone = autostart_dir.clone();
+    btn_autostart.connect_clicked(move |_| {
+        process::execute_cmd(&format!("xdg-open '{}' &", autostart_dir_clone.to_string_lossy()));
+    });
+    row_autostart.add_suffix(&btn_autostart);
+    group_autostart.add(&row_autostart);
+    page_system.add(&group_autostart);
+
+    // Monitor configuratie
+    let group_monitor = PreferencesGroup::builder().title(&tr.sys_monitor).build();
+    let mon_count = hyprland::get_monitors().len();
+    let row_monitor = ActionRow::builder()
+        .title(&tr.sys_monitor)
+        .subtitle(format!("{} {}", mon_count, tr.hypr_display))
+        .build();
+    let btn_monitor = Button::builder()
+        .label(tr.hypr_display.as_str())
+        .valign(gtk4::Align::Center)
+        .build();
+    let stack_to_monitor = stack.clone();
+    btn_monitor.connect_clicked(move |_| {
+        stack_to_monitor.set_visible_child_name("hyprland");
+    });
+    row_monitor.add_suffix(&btn_monitor);
+    group_monitor.add(&row_monitor);
+    page_system.add(&group_monitor);
+
+    // Over Zenith
+    let group_about = PreferencesGroup::builder().title(&tr.sys_about).build();
+    let row_about = ActionRow::builder()
+        .title("Zenith")
+        .subtitle(crate::ui::escape::pango_escape(&format!("v{} — Voor Hyprland & Quickshell", env!("CARGO_PKG_VERSION"))))
+        .build();
+    group_about.add(&row_about);
+    page_system.add(&group_about);
+
+    stack.add_titled(&page_system, Some("system"), &crate::ui::escape::pango_escape(&tr.sidebar_system));
 
     // Selecteer initiële pagina in de zijbalk
     let mut selected_index = 0;
@@ -1173,4 +1315,25 @@ fn hex_to_rgba(hex: &str) -> RGBA {
     } else {
         RGBA::builder().red(0.2).green(0.8).blue(1.0).alpha(1.0).build()
     }
+}
+
+/// Leest een GNOME `interface`-sleutel via gsettings (best-effort).
+fn gsettings_get(key: &str) -> String {
+    if let Ok(out) = std::process::Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", key])
+        .output()
+    {
+        if let Ok(text) = String::from_utf8(out.stdout) {
+            // Verwijder omringende aanhalingstekens van stringwaarden.
+            return text.trim().trim_matches('\'').to_string();
+        }
+    }
+    String::new()
+}
+
+/// Schrijft een GNOME `interface`-sleutel via gsettings (best-effort).
+fn gsettings_set(key: &str, value: &str) {
+    let _ = std::process::Command::new("gsettings")
+        .args(["set", "org.gnome.desktop.interface", key, value])
+        .spawn();
 }

@@ -266,12 +266,12 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
 
     // Knoppen direct onder preview
     let row_preview_actions = ActionRow::builder()
-        .title("Test & Directe Bediening")
+        .title(crate::ui::escape::pango_escape("Test & Directe Bediening"))
         .subtitle("Open het lockscreen in een veilig venster of activeer de echte schermvergrendeling")
         .build();
 
     let btn_test_win = Button::builder()
-        .label(&format!("👁️ {}", tr.ls_test_preview))
+        .label(format!("👁️ {}", tr.ls_test_preview))
         .valign(Align::Center)
         .build();
     btn_test_win.connect_clicked(|_| {
@@ -280,7 +280,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
     row_preview_actions.add_suffix(&btn_test_win);
 
     let btn_lock_now = Button::builder()
-        .label(&format!("🔒 {}", tr.ls_lock_now))
+        .label(format!("🔒 {}", tr.ls_lock_now))
         .valign(Align::Center)
         .build();
     btn_lock_now.add_css_class("destructive-action");
@@ -394,9 +394,10 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
     let cur_blur = shell_state.borrow().lockscreen.blur_radius;
     let row_blur = ActionRow::builder()
         .title(&tr.ls_blur_radius)
-        .subtitle(&format!("{} px", cur_blur))
+        .subtitle(format!("{} px", cur_blur))
         .build();
     let s_blur = Scale::with_range(Orientation::Horizontal, 0.0, 80.0, 2.0);
+    s_blur.set_draw_value(false);
     s_blur.set_value(cur_blur as f64);
     s_blur.set_width_request(150);
     {
@@ -420,9 +421,10 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
     let cur_dim = shell_state.borrow().lockscreen.dim_opacity;
     let row_dim = ActionRow::builder()
         .title(&tr.ls_dim_opacity)
-        .subtitle(&format!("{:.0}%", cur_dim * 100.0))
+        .subtitle(format!("{:.0}%", cur_dim * 100.0))
         .build();
     let s_dim = Scale::with_range(Orientation::Horizontal, 0.0, 0.90, 0.05);
+    s_dim.set_draw_value(false);
     s_dim.set_value(cur_dim);
     s_dim.set_width_request(150);
     {
@@ -480,9 +482,10 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
     let cur_csize = shell_state.borrow().lockscreen.clock_font_size;
     let row_csize = ActionRow::builder()
         .title(&tr.ls_clock_size)
-        .subtitle(&format!("{} pt", cur_csize))
+        .subtitle(format!("{} pt", cur_csize))
         .build();
     let s_csize = Scale::with_range(Orientation::Horizontal, 32.0, 140.0, 2.0);
+    s_csize.set_draw_value(false);
     s_csize.set_value(cur_csize as f64);
     s_csize.set_width_request(150);
     {
@@ -688,7 +691,10 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
                 None => format!("Kaart ID: {}", card_id),
             };
 
-            let row = ActionRow::builder().title(&title).subtitle(&desc).build();
+            let row = ActionRow::builder()
+                .title(crate::ui::escape::pango_escape(&title))
+                .subtitle(crate::ui::escape::pango_escape(&desc))
+                .build();
 
             if idx > 0 {
                 let btn_up = Button::builder().label("▲").valign(Align::Center).tooltip_text("Omhoog").build();
@@ -859,7 +865,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
         .description("Slaat direct op naar ~/.config/quickshell/zenith-shell.json")
         .build();
 
-    let btn_save = Button::builder().label(&format!("💾 {}", tr.ls_save)).valign(Align::Center).build();
+    let btn_save = Button::builder().label(format!("💾 {}", tr.ls_save)).valign(Align::Center).build();
     btn_save.add_css_class("suggested-action");
 
     let status_lbl = Label::builder().label("").halign(Align::Start).margin_start(12).build();

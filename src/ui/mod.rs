@@ -1,4 +1,5 @@
 pub mod control_center_designer;
+pub mod escape;
 pub mod fastfetch_designer;
 pub mod icon_studio;
 pub mod lockscreen_designer;

@@ -14,8 +14,8 @@ pub fn build_icon_studio_page(tr: &Translations) -> PreferencesPage {
     let create_icon_row = |title: &str, subtitle: &str, get_val: fn(&ZenithShellConfig) -> String, set_val: fn(&mut ZenithShellConfig, String)| -> ActionRow {
         let current_val = get_val(&cfg.borrow());
         let row = ActionRow::builder()
-            .title(title)
-            .subtitle(subtitle)
+            .title(crate::ui::escape::pango_escape(title))
+            .subtitle(crate::ui::escape::pango_escape(subtitle))
             .build();
 
         let entry = Entry::builder()
@@ -122,7 +122,7 @@ pub fn build_icon_studio_page(tr: &Translations) -> PreferencesPage {
     // GROEP 2: Audio & Helderheid
     // ========================================================
     let group_audio = PreferencesGroup::builder()
-        .title("Audio & Schermhelderheid")
+        .title(crate::ui::escape::pango_escape("Audio & Schermhelderheid"))
         .description("Iconen voor geluidsvolume, microfoon en schermhelderheid")
         .build();
 
@@ -174,7 +174,7 @@ pub fn build_icon_studio_page(tr: &Translations) -> PreferencesPage {
     // GROEP 3: Batterij & Energie
     // ========================================================
     let group_power = PreferencesGroup::builder()
-        .title("Batterij & Energiebeheer")
+        .title(crate::ui::escape::pango_escape("Batterij & Energiebeheer"))
         .description("Accu indicatoren en actieknoppen voor het systeem")
         .build();
 

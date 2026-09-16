@@ -1,6 +1,6 @@
 use std::fs::{create_dir_all, read_to_string, File, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn get_home() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
@@ -71,7 +71,7 @@ pub fn ensure_environment() {
     ensure_waybar_import(&home);
 }
 
-fn ensure_file_exists(path: &PathBuf, default_content: &str) {
+fn ensure_file_exists(path: &Path, default_content: &str) {
     if !path.exists() {
         if let Some(parent) = path.parent() {
             let _ = create_dir_all(parent);
@@ -82,7 +82,7 @@ fn ensure_file_exists(path: &PathBuf, default_content: &str) {
     }
 }
 
-fn ensure_quickshell_config(home: &PathBuf) {
+fn ensure_quickshell_config(home: &Path) {
     let qs_dir = home.join(".config/quickshell");
     let modules_dir = qs_dir.join("modules");
     let cards_dir = qs_dir.join("cards");
@@ -524,7 +524,7 @@ Scope {
     ensure_default_cards(&cards_dir);
 }
 
-fn ensure_default_modules(dir: &PathBuf) {
+fn ensure_default_modules(dir: &Path) {
     ensure_file_exists(
         &dir.join("workspaces.qml"),
         r###"import QtQuick
@@ -1351,7 +1351,7 @@ Rectangle {
 }
 
 
-fn ensure_panels(dir: &PathBuf) {
+fn ensure_panels(dir: &Path) {
     ensure_file_exists(
         &dir.join("ControlCenter.qml"),
         r###"import QtQuick
@@ -1794,7 +1794,7 @@ Scope {
     );
 }
 
-fn ensure_default_cards(dir: &PathBuf) {
+fn ensure_default_cards(dir: &Path) {
     ensure_file_exists(
         &dir.join("wifi_toggle.qml"),
         r###"import QtQuick
@@ -2815,7 +2815,7 @@ Rectangle {
     );
 }
 
-fn ensure_waybar_config(home: &PathBuf) {
+fn ensure_waybar_config(home: &Path) {
     let wb_dir = home.join(".config/waybar");
     let config_path = wb_dir.join("config");
 
@@ -2905,7 +2905,7 @@ window#waybar {
     }
 }
 
-fn ensure_hyprland_source(home: &PathBuf) {
+fn ensure_hyprland_source(home: &Path) {
     let hypr_dir = home.join(".config/hypr");
     let _ = create_dir_all(&hypr_dir);
     let hypr_conf = hypr_dir.join("hyprland.conf");
@@ -2947,7 +2947,7 @@ fn ensure_hyprland_source(home: &PathBuf) {
     }
 }
 
-fn ensure_kitty_import(home: &PathBuf) {
+fn ensure_kitty_import(home: &Path) {
     let kitty_conf = home.join(".config/kitty/kitty.conf");
     if kitty_conf.exists() {
         if let Ok(content) = read_to_string(&kitty_conf) {
@@ -2961,7 +2961,7 @@ fn ensure_kitty_import(home: &PathBuf) {
     }
 }
 
-fn ensure_waybar_import(home: &PathBuf) {
+fn ensure_waybar_import(home: &Path) {
     let waybar_style = home.join(".config/waybar/style.css");
     if waybar_style.exists() {
         if let Ok(content) = read_to_string(&waybar_style) {
