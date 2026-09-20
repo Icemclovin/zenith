@@ -3,6 +3,16 @@ name = "zenith"
 version = "0.1.0"
 edition = "2021"
 
+# ZenithOS binaries
+[[bin]]
+name = "zenith"
+path = "src/main.rs"
+
+# zenithd — de ZenithOS backend-daemon (JSON-RPC 2.0 IPC)
+[[bin]]
+name = "zenithd"
+path = "src/zenithd_main.rs"
+
 [dependencies]
 gtk4 = { version = "0.9", features = ["v4_10"] }
 libadwaita = { version = "0.7", features = ["v1_5"] }

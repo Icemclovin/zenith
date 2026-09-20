@@ -1,0 +1,109 @@
+{
+  "version": "2.6.1",
+  "$schema": "https://archinstall.readthedocs.io/en/latest/config-schema/archinstall-2_6.html",
+  "__separator__": "-----------------------------------------------------------------------------------------------",
+  "additional_packages": [
+    "base-devel",
+    "git",
+    "rust",
+    "cargo",
+    "gtk4",
+    "libadwaita",
+    "polkit",
+    "hyprland",
+    "hyprpolkitagent",
+    "xdg-desktop-portal-hyprland",
+    "kitty",
+    "rofi",
+    "waybar",
+    "quickshell",
+    "brightnessctl",
+    "playerctl",
+    "wireplumber",
+    "bluez-utils",
+    "networkmanager",
+    "ttf-jetbrains-mono-nerd",
+    "swaybg",
+    "man-db",
+    "vim",
+    "openssh"
+  ],
+  "audio": {
+    "audio": "pipewire"
+  },
+  "bootloader": {
+    "bootloader": "systemd-boot"
+  },
+  "custom_commands": {
+    "post_install": []
+  },
+  "gfx_drivers": {
+    "gfx_drivers": [
+      "all"
+    ]
+  },
+  "hostname": "zenithos-vm",
+  "kernels": [
+    "linux"
+  ],
+  "locale": {
+    "kb_layout": "us",
+    "sys_encoding": "utf-8",
+    "sys_language": "en_US",
+    "timezone": "Europe/Brussels"
+  },
+  "mirror_config": {
+    "mirror_regions": {
+      "no_mirrors": false
+    },
+    "optional_mirrors": [
+      "https://geo.mirror.pkgbuild.com/$repo/os/$arch"
+    ]
+  },
+  "network": {
+    "type": "nm"
+  },
+  "packages": [],
+  "profile": {
+    "profile": "Desktop",
+    "gfx_drivers": {
+      "gfx_drivers": [
+        "all"
+      ]
+    }
+  },
+  "storage": {
+    "filesystem": {
+      "mountpoints": {
+        "/": {
+          "btrfs": {
+            "subvolumes": {
+              "@": {
+                "compress": true,
+                "mountpoint": "/"
+              },
+              "@home": {
+                "compress": true,
+                "mountpoint": "/home"
+              },
+              "@log": {
+                "compress": true,
+                "mountpoint": "/var/log"
+              },
+              "@pkg": {
+                "compress": true,
+                "mountpoint": "/var/cache/pacman/pkg"
+              },
+              "@snapshots": {
+                "compress": true,
+                "mountpoint": "/.snapshots"
+              }
+            }
+          },
+          "device": "auto",
+          "mountpoint": "/"
+        }
+      }
+    }
+  }
+}

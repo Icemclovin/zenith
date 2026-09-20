@@ -273,6 +273,12 @@ pub struct Translations {
     pub bk_location_title: String,
     pub bk_snapshots: String,
     pub bk_files: String,
+    // zenithd daemon (IPC)
+    pub daemon_title: String,
+    pub daemon_sub_on: String,
+    pub daemon_sub_off: String,
+    pub daemon_btn_start: String,
+    pub daemon_btn_stop: String,
 }
 
 pub fn get_translations(lang: &Language) -> Translations {
@@ -466,6 +472,11 @@ pub fn get_translations(lang: &Language) -> Translations {
             bk_location_title: "Opslaglocatie".to_string(),
             bk_snapshots: "back-ups bewaard".to_string(),
             bk_files: "bestanden".to_string(),
+            daemon_title: "zenithd (IPC-daemon)".to_string(),
+            daemon_sub_on: "Actief — de GUI praat via JSON-RPC 2.0 met de daemon.".to_string(),
+            daemon_sub_off: "Uit — start de daemon voor live two-way sync.".to_string(),
+            daemon_btn_start: "▶ Starten".to_string(),
+            daemon_btn_stop: "■ Stoppen".to_string(),
         },
         Language::En => Translations {
             sidebar_dashboard: "Dashboard".to_string(),
@@ -656,6 +667,11 @@ pub fn get_translations(lang: &Language) -> Translations {
             bk_location_title: "Storage location".to_string(),
             bk_snapshots: "backups kept".to_string(),
             bk_files: "files".to_string(),
+            daemon_title: "zenithd (IPC daemon)".to_string(),
+            daemon_sub_on: "Active — the GUI talks to the daemon via JSON-RPC 2.0.".to_string(),
+            daemon_sub_off: "Off — start the daemon for live two-way sync.".to_string(),
+            daemon_btn_start: "▶ Start".to_string(),
+            daemon_btn_stop: "■ Stop".to_string(),
         },
         Language::De => Translations {
             sidebar_dashboard: "Dashboard".to_string(),
@@ -846,6 +862,11 @@ pub fn get_translations(lang: &Language) -> Translations {
             bk_location_title: "Speicherort".to_string(),
             bk_snapshots: "Backups aufbewahrt".to_string(),
             bk_files: "Dateien".to_string(),
+            daemon_title: "zenithd (IPC-Daemon)".to_string(),
+            daemon_sub_on: "Aktiv — die GUI spricht über JSON-RPC 2.0 mit dem Daemon.".to_string(),
+            daemon_sub_off: "Aus — starte den Daemon für Live-Two-Way-Sync.".to_string(),
+            daemon_btn_start: "▶ Starten".to_string(),
+            daemon_btn_stop: "■ Stoppen".to_string(),
         },
         Language::Es => Translations {
             sidebar_dashboard: "Panel".to_string(),
@@ -1036,6 +1057,11 @@ pub fn get_translations(lang: &Language) -> Translations {
             bk_location_title: "Ubicación de almacenamiento".to_string(),
             bk_snapshots: "copias conservadas".to_string(),
             bk_files: "archivos".to_string(),
+            daemon_title: "zenithd (daemon IPC)".to_string(),
+            daemon_sub_on: "Activo — la GUI habla con el daemon mediante JSON-RPC 2.0.".to_string(),
+            daemon_sub_off: "Apagado — inicia el daemon para la sincronización bidireccional.".to_string(),
+            daemon_btn_start: "▶ Iniciar".to_string(),
+            daemon_btn_stop: "■ Detener".to_string(),
         },
     }
 }
@@ -1103,6 +1129,7 @@ mod tests {
                 sidebar_fastfetch, ff_preview, ff_refresh_preview, ff_logo_settings, ff_logo_type, ff_logo_source, ff_modules, ff_add_module, ff_custom_command, ff_cmd_name, ff_cmd_script, ff_styling, ff_separator, ff_save, ff_saved_toast,
                 sidebar_lockscreen, ls_preview, ls_test_preview, ls_lock_now, ls_layout_preset, ls_bg_mode, ls_blur_radius, ls_dim_opacity, ls_clock_format, ls_clock_size, ls_greeting, ls_auth_icon, ls_shake, ls_cards, ls_add_card, ls_save, ls_saved_toast,
                 sidebar_backup, bk_create_title, bk_create_desc, bk_label_title, bk_label_sub, bk_action_title, bk_action_sub, bk_create_btn, bk_status_idle, bk_list_title, bk_list_desc, bk_none_title, bk_none_sub, bk_restore_btn, bk_restore_ok, bk_delete_tip, bk_deleted_ok, bk_error_prefix, bk_err_empty_label, bk_created_ok, bk_done, bk_info_title, bk_location_title, bk_snapshots, bk_files,
+                daemon_title, daemon_sub_on, daemon_sub_off, daemon_btn_start, daemon_btn_stop,
             );
         }
     }

@@ -12,7 +12,7 @@ use libadwaita::{
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::str::FromStr;
-use crate::backend::{config, hyprland, process, themes, waybar};
+use crate::backend::{config, hyprland, ipc_client, process, themes, waybar};
 use crate::backend::{i18n, palette, shell_config::ZenithShellConfig};
 
 pub fn build_window(app: &Application) {
@@ -457,6 +457,56 @@ fn build_window_content(
     });
     row_restart_bar.add_suffix(&btn_restart_bar);
     group_quick.add(&row_restart_bar);
+
+    // zenithd daemon-status (IPC-bridge voor de Two-Way Sync)
+    let sub_on_owned = tr.daemon_sub_on.clone();
+    let sub_off_owned = tr.daemon_sub_off.clone();
+    let btn_start_owned = tr.daemon_btn_start.clone();
+    let btn_stop_owned = tr.daemon_btn_stop.clone();
+    let daemon_on = ipc_client::is_daemon_running();
+    let row_daemon = ActionRow::builder()
+        .title(crate::ui::escape::pango_escape(&tr.daemon_title))
+        .subtitle(if daemon_on { sub_on_owned.as_str() } else { sub_off_owned.as_str() })
+        .build();
+    let btn_daemon = Button::builder()
+        .label(if daemon_on { btn_stop_owned.as_str() } else { btn_start_owned.as_str() })
+        .valign(gtk4::Align::Center)
+        .build();
+    row_daemon.add_suffix(&btn_daemon);
+    group_quick.add(&row_daemon);
+
+    let row_c = row_daemon.clone();
+    let btn_c = btn_daemon.clone();
+    let sub_on_c = sub_on_owned.clone();
+    let sub_off_c = sub_off_owned.clone();
+    let btn_on_c = btn_start_owned.clone();
+    let btn_off_c = btn_stop_owned.clone();
+    btn_daemon.connect_clicked(move |_| {
+        if ipc_client::is_daemon_running() {
+            process::execute_cmd("pkill -x zenithd");
+        } else {
+            process::execute_cmd("zenithd &");
+        }
+        // Frisse klonen voor de innerlijke timer-closure (Fn-correct).
+        let row_inner = row_c.clone();
+        let btn_inner = btn_c.clone();
+        let sub_on_inner = sub_on_c.clone();
+        let sub_off_inner = sub_off_c.clone();
+        let btn_on_inner = btn_on_c.clone();
+        let btn_off_inner = btn_off_c.clone();
+        // Verfris de status na een korte pauze zodat de daemon de wijziging oppikt.
+        gtk4::glib::timeout_add_local(std::time::Duration::from_millis(600), move || {
+            let on = ipc_client::is_daemon_running();
+            if on {
+                row_inner.set_subtitle(sub_on_inner.as_str());
+                btn_inner.set_label(btn_off_inner.as_str());
+            } else {
+                row_inner.set_subtitle(sub_off_inner.as_str());
+                btn_inner.set_label(btn_on_inner.as_str());
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    });
 
     page_dash.add(&group_quick);
 
