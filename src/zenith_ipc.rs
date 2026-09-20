@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fs::{create_dir_all, read_to_string};
 use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -116,12 +117,102 @@ fn dispatch(method: &str, params: Option<Value>) -> (Option<Value>, Option<(i32,
         "ping" => (Some(Value::String("pong".to_string())), None),
         "get_status" => (Some(daemon_status()), None),
         "reload_statusbar" => (Some(quickshell_reload()), None),
+        "sync.get_config" => sync_get_config(params),
+        "sync.set_config" => sync_set_config(params),
+        "sync.list" => (Some(sync_list()), None),
         "echo" => match params {
             Some(v) => (Some(v), None),
             None => (Some(Value::Null), None),
         },
         _ => (None, Some((-32_601, "Method not found".to_string()))),
     }
+}
+
+// ===========================================================================
+// Two-way sync (Sprint 1/basis) — FR-01 + FR-03.
+//
+// `std` biedt hier geen inotify-ondersteuning, dus de daemon werkt op
+// "watch-free" two-way sync: elk `sync.get_config`-verzoek leest het
+// configbestand live van schijf en elk `sync.set_config`-verzoek schrijft het
+// terug. Zo blijft het bestand altijd de Single Source of Truth en blijven
+// handmatige (externe) aanpassingen zichtbaar in de GUI — precies de intentie
+// van FR-01/FR-03. Wanneer inotify beschikbaar komt, kan hier een watcher bovenop.
+//
+// Veiligheid: alleen een vaste allow-list van door Zenith beheerde bestanden is
+// via de daemon lees-/schrijfbaar (geen willekeurig pad).
+
+/// Vertaalt een logische naam naar het absolute pad van een beheerd bestand.
+fn known_config_path(key: &str) -> Option<PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    match key {
+        "zenith-hypr" => Some(PathBuf::from(home).join(".config/hypr/zenith.conf")),
+        "quickshell" => Some(PathBuf::from(home).join(".config/quickshell/zenith-shell.json")),
+        "waybar" => Some(PathBuf::from(home).join(".config/waybar/config")),
+        _ => None,
+    }
+}
+
+/// Haal een stringveld op uit de params (als owned String).
+fn param_str(params: &Option<Value>, key: &str) -> String {
+    match params {
+        Some(v) => match v.get(key) {
+            Some(x) => match x.as_str() {
+                Some(s) => s.to_string(),
+                None => String::new(),
+            },
+            None => String::new(),
+        },
+        None => String::new(),
+    }
+}
+
+/// Bouw een JSON-object met één veld.
+fn single_object(key: &str, value: Value) -> Value {
+    let mut obj = serde_json::from_str::<Value>("{}").unwrap_or_default();
+    if let Some(m) = obj.as_object_mut() {
+        m.insert(key.to_string(), value);
+    }
+    obj
+}
+
+/// sync.get_config — lees een beheerd configbestand en retourneer de inhoud.
+fn sync_get_config(params: Option<Value>) -> (Option<Value>, Option<(i32, String)>) {
+    let key = param_str(&params, "path");
+    match known_config_path(&key) {
+        Some(path) if path.is_file() => match read_to_string(&path) {
+            Ok(content) => (Some(single_object("content", Value::String(content))), None),
+            Err(e) => (None, Some((-1, format!("Lezen mislukt: {}", e)))),
+        },
+        _ => (None, Some((-1, "Onbekend of ontbrekend configbestand".to_string()))),
+    }
+}
+
+/// sync.set_config — schrijf de opgegeven inhoud terug naar een beheerd bestand.
+fn sync_set_config(params: Option<Value>) -> (Option<Value>, Option<(i32, String)>) {
+    let key = param_str(&params, "path");
+    let content = param_str(&params, "content");
+    let path = match known_config_path(&key) {
+        Some(p) => p,
+        None => return (None, Some((-1, "Onbekend configbestand".to_string()))),
+    };
+    if let Some(parent) = path.parent() {
+        let _ = create_dir_all(parent);
+    }
+    match std::fs::write(&path, content) {
+        Ok(()) => (Some(single_object("written", Value::Bool(true))), None),
+        Err(e) => (None, Some((-1, format!("Schrijven mislukt: {}", e)))),
+    }
+}
+
+/// sync.list — lijst de beheerde configbestanden.
+fn sync_list() -> Value {
+    let mut arr = serde_json::from_str::<Value>("[]").unwrap_or_default();
+    if let Some(a) = arr.as_array_mut() {
+        for k in ["zenith-hypr", "quickshell", "waybar"] {
+            a.push(single_object("path", Value::String(k.to_string())));
+        }
+    }
+    arr
 }
 
 /// Verwerk één verbinding: lees, dispatch, antwoord.
@@ -231,4 +322,40 @@ fn test_dispatch_known_and_unknown() {
     assert!(res2.is_none());
     assert!(err2.is_some());
     assert_eq!(err2.unwrap_or((-1, "".to_string())).0, -32_601);
+}
+
+#[test]
+fn test_known_config_path_allow_list() {
+    // Bekende namen worden naar de juiste plek vertaald.
+    assert!(known_config_path("zenith-hypr").is_some());
+    assert!(known_config_path("quickshell").is_some());
+    assert!(known_config_path("waybar").is_some());
+    // Onbekende namen mogen NOOIT naar een pad vertaald worden (geen willekeurig schrijven).
+    assert!(known_config_path("../../etc/passwd").is_none());
+    assert!(known_config_path("/etc/shadow").is_none());
+    assert!(known_config_path("").is_none());
+    assert!(known_config_path("..").is_none());
+}
+
+#[test]
+fn test_set_config_unknown_returns_error() {
+    let params = serde_json::from_str::<Value>(
+        r#"{"path":"/etc/shadow","content":"x"}"#
+    ).unwrap_or_default();
+    let (res, err) = sync_set_config(Some(params));
+    assert!(res.is_none());
+    assert!(err.is_some());
+}
+
+#[test]
+fn test_param_str_extracts_fields() {
+    let params_a = serde_json::from_str::<Value>(
+        r#"{"path":"waybar","content":"hello"}"#
+    ).unwrap_or_default();
+    let params_b = params_a.clone();
+    assert_eq!(param_str(&Some(params_a), "path"), "waybar");
+    assert_eq!(param_str(&Some(params_b), "content"), "hello");
+    // Ontbrekend veld geeft lege string.
+    let empty = serde_json::from_str::<Value>("{}").unwrap_or_default();
+    assert_eq!(param_str(&Some(empty), "nope"), "");
 }

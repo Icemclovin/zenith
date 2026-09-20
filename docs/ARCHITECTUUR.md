@@ -35,6 +35,11 @@ nog openstaat.
 - **FR-01**: JSON-RPC 2.0-server op `$XDG_RUNTIME_DIR/zenith.sock` (Unix domain socket).
 - Methoden: `ping`, `get_status`, `reload_statusbar` (SIGUSR1 naar Quickshell),
   `echo`; correcte JSON-RPC-foutantwoorden (-32700, -32601).
+- **Two-way sync (FR-01/FR-03)**: `sync.list`, `sync.get_config`, `sync.set_config`.
+  Watch-free: elk verzoek leest/schrijft het configbestand live, zodat het bestand
+  de Single Source of Truth blijft en externe bewerkingen zichtbaar zijn. Alleen een
+  allow-list van beheerde bestanden (zenith-hypr, quickshell, waybar) is lees-/
+  schrijfbaar — willekeurige paden worden geweigerd.
 - Transport: één verbinding per verzoek met write-half-close als berichtgrens.
 - Binaire grootte: ~475 KB (voldoet ruim aan NFR-05).
 - Client: `src/backend/ipc_client.rs` — de GUI toont op het dashboard of de daemon
