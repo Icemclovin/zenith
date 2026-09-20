@@ -1,0 +1,9 @@
+{
+  "key": "wireshark",
+  "name": "Wireshark",
+  "description": "Netwerkanalyse-tool voor pakketinspectie en protocoldebugging.",
+  "icon": "🕵️",
+  "packages": ["wireshark", "tshark"],
+  "check_binary": "wireshark",
+  "flatpak_ids": ["org.wireshark.Wireshark"]
+}

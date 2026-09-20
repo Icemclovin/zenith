@@ -213,6 +213,29 @@ pub fn apply_palette(palette: &WallpaperPalette) {
     crate::backend::themes::update_quickshell(&hypr_cfg);
 }
 
+/// Glassmorphism-palet (ZenithOS-spec): frost glas UI-identiteit.
+/// Primary `#458588`, achtergrond `#1D2021` (85% ondoorzichtig),
+/// Accent `#D79921`, Success `#98971A`.
+pub fn glassmorphism_palette() -> WallpaperPalette {
+    WallpaperPalette {
+        background: "#1d2021".to_string(),
+        surface: "#232627".to_string(),
+        primary_accent: "#458588".to_string(),
+        secondary_accent: "#98971a".to_string(),
+        foreground: "#e6e1d8".to_string(),
+    }
+}
+
+/// Pas het Glassmorphism-palet toe met de frosted-glas laag (85% ondoorzichtig).
+pub fn apply_glassmorphism() {
+    let pal = glassmorphism_palette();
+    let mut cfg = ZenithShellConfig::load_or_default();
+    cfg.styling.opacity = 0.85;
+    cfg.styling.pill_opacity = 0.85;
+    let _ = cfg.save();
+    apply_palette(&pal);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,5 +312,14 @@ mod tests {
         assert!(p.primary_accent.starts_with('#') && p.primary_accent.len() == 7);
         assert!(p.secondary_accent.starts_with('#') && p.secondary_accent.len() == 7);
         assert!(p.foreground.starts_with('#') && p.foreground.len() == 7);
+    }
+
+    #[test]
+    fn glassmorphism_palette_values() {
+        let p = glassmorphism_palette();
+        assert_eq!(p.background, "#1d2021");
+        assert_eq!(p.primary_accent, "#458588");
+        assert_eq!(p.secondary_accent, "#98971a");
+        assert_eq!(p.foreground, "#e6e1d8");
     }
 }

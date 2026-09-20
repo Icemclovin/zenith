@@ -23,6 +23,8 @@
     "bluez-utils",
     "networkmanager",
     "ttf-jetbrains-mono-nerd",
+    "inter",
+    "papirus-icon-theme",
     "swaybg",
     "man-db",
     "vim",

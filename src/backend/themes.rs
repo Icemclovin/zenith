@@ -246,9 +246,9 @@ pub fn sync_shell_config(shell_cfg: &crate::backend::shell_config::ZenithShellCo
         shell_cfg.styling.module_spacing
     );
 
-    if let Ok(mut f) = File::create(dir.join("zenith-theme.json")) {
-        let _ = f.write_all(json.as_bytes());
-    }
+    let tmp = dir.join("zenith-theme.json.tmp");
+    let _ = std::fs::write(&tmp, &json);
+    let _ = std::fs::rename(&tmp, dir.join("zenith-theme.json"));
 
     let _ = std::process::Command::new("pkill")
         .args(["-SIGUSR1", "quickshell"])

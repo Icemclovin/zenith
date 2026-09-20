@@ -66,6 +66,7 @@ PACKAGES=(
     kitty rofi waybar quickshell
     brightnessctl playerctl wireplumber bluez-utils
     networkmanager ttf-jetbrains-mono-nerd swaybg
+    inter papirus-icon-theme
     openssh
 )
 echo "-> Pakketten (${#PACKAGES[@]}): ${PACKAGES[*]}"

@@ -120,6 +120,7 @@ fn dispatch(method: &str, params: Option<Value>) -> (Option<Value>, Option<(i32,
         "sync.get_config" => sync_get_config(params),
         "sync.set_config" => sync_set_config(params),
         "sync.list" => (Some(sync_list()), None),
+        "update_module_position" => update_module_position(params),
         "echo" => match params {
             Some(v) => (Some(v), None),
             None => (Some(Value::Null), None),
@@ -195,12 +196,128 @@ fn sync_set_config(params: Option<Value>) -> (Option<Value>, Option<(i32, String
         Some(p) => p,
         None => return (None, Some((-1, "Onbekend configbestand".to_string()))),
     };
+    match write_text_atomic(&path, &content) {
+        Ok(()) => (Some(single_object("written", Value::Bool(true))), None),
+        Err(e) => (None, Some((-1, format!("Schrijven mislukt: {}", e)))),
+    }
+}
+
+/// Schrijft tekst atomair weg: eerst naar een tijdelijke file, dan `rename`.
+/// Zo ziet Quickshell nooit een half weggeschreven configuratie (voorkomt crash
+/// bij herladen — Taak 2).
+fn write_text_atomic(path: &PathBuf, content: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         let _ = create_dir_all(parent);
     }
-    match std::fs::write(&path, content) {
-        Ok(()) => (Some(single_object("written", Value::Bool(true))), None),
-        Err(e) => (None, Some((-1, format!("Schrijven mislukt: {}", e)))),
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+// ===========================================================================
+// Drag-and-Drop Canvas — update_module_position (H5).
+//
+// Verplaats een statusbalkmodule naar een andere uitlijning (left/center/right)
+// en een nieuwe index, schrijf de quickshell-config atomair weg en stuur
+// vervolgens SIGUSR1 naar Quickshell voor een live redraw.
+
+/// Pad naar het door Zenith beheerde quickshell-schelsysteembestand.
+fn quickshell_json_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    Some(PathBuf::from(home).join(".config/quickshell/zenith-shell.json"))
+}
+
+/// Haal een geheel getal uit de params.
+fn param_i64(params: &Option<Value>, key: &str) -> Option<i64> {
+    match params {
+        Some(v) => match v.get(key) {
+            Some(x) => x.as_i64(),
+            None => None,
+        },
+        None => None,
+    }
+}
+
+/// update_module_position — verplaats een module naar slot+index, atomair wegschrijven,
+/// en laat Quickshell live hertekenen (SIGUSR1).
+fn update_module_position(params: Option<Value>) -> (Option<Value>, Option<(i32, String)>) {
+    let module_id = param_str(&params, "module_id");
+    let alignment = param_str(&params, "alignment");
+    let new_index = param_i64(&params, "new_index").unwrap_or(0);
+    if module_id.is_empty() {
+        return (None, Some((-1, "module_id ontbreekt".to_string())));
+    }
+    if !matches!(alignment.as_str(), "left" | "center" | "right") {
+        return (None, Some((-1, "alignment moet left/center/right zijn".to_string())));
+    }
+    let path = match quickshell_json_path() {
+        Some(p) => p,
+        None => return (None, Some((-1, "Geen home-map".to_string()))),
+    };
+    let content = match read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return (None, Some((-1, "zenith-shell.json niet gevonden".to_string()))),
+    };
+    let mut root = match serde_json::from_str::<Value>(&content) {
+        Ok(v) => v,
+        Err(e) => return (None, Some((-1, format!("JSON parsefout: {}", e)))),
+    };
+
+    // Navigeer naar data.modules.
+    let moved = {
+        let modules = root.get_mut("modules");
+        let modules = match modules {
+            Some(m) if m.is_object() => m.as_object_mut().unwrap(),
+            _ => return (None, Some((-1, "modules-veld ontbreekt".to_string()))),
+        };
+
+        // Haal uit elke slot de module weg.
+        for slot in ["left", "center", "right"] {
+            if let Some(arr) = modules.get_mut(slot) {
+                if let Some(a) = arr.as_array_mut() {
+                    a.retain(|x| !(x.as_str().unwrap_or("") == module_id));
+                }
+            }
+        }
+
+        // Plaats op de nieuwe index in het doel-slot.
+        let target = modules.get_mut(alignment.as_str());
+        match target {
+            Some(t) if t.is_array() => {
+                if let Some(a) = t.as_array_mut() {
+                    let idx = new_index.clamp(0, a.len() as i64) as usize;
+                    a.insert(idx, Value::String(module_id.clone()));
+                    true
+                } else {
+                    false
+                }
+            }
+            Some(t) if t.is_null() => {
+                // Nog geen array aangelegd.
+                modules.insert(
+                    alignment.clone(),
+                    Value::Array(vec![Value::String(module_id.clone())]),
+                );
+                true
+            }
+            _ => false,
+        }
+    };
+
+    if !moved {
+        return (None, Some((-1, "Doel-slot is geen array".to_string())));
+    }
+
+    match serde_json::to_string_pretty(&root) {
+        Ok(json) => match write_text_atomic(&path, &json) {
+            Ok(()) => {
+                let reload = quickshell_reload();
+                let _ = reload;
+                (Some(single_object("ok", Value::Bool(true))), None)
+            }
+            Err(e) => (None, Some((-1, format!("Wegschrijven mislukt: {}", e)))),
+        },
+        Err(e) => (None, Some((-1, format!("JSON serialisatiefout: {}", e)))),
     }
 }
 
@@ -358,4 +475,51 @@ fn test_param_str_extracts_fields() {
     // Ontbrekend veld geeft lege string.
     let empty = serde_json::from_str::<Value>("{}").unwrap_or_default();
     assert_eq!(param_str(&Some(empty), "nope"), "");
+}
+
+/// update_module_position met een tijdelijke HOME schrijven we naar
+/// ~/.config/quickshell/zenith-shell.json zodat de test losstaat van de echte config.
+#[test]
+fn test_update_module_position_moves_module() {
+    let fake_home = std::path::PathBuf::from("/tmp/zenith-ipc-test-home");
+    std::env::set_var("HOME", &fake_home);
+
+    let qs_dir = fake_home.join(".config/quickshell");
+    let _ = std::fs::create_dir_all(&qs_dir);
+    let shell_path = qs_dir.join("zenith-shell.json");
+    let _ = std::fs::write(
+        &shell_path,
+        r#"{ "modules": { "left": ["launcher","workspaces"], "center": [], "right": ["clock"] } }"#,
+    );
+
+    // Verplaats "clock" naar center-index 0.
+    let params = serde_json::from_str::<Value>(
+        r#"{"module_id":"clock","new_index":0,"alignment":"center"}"#,
+    ).unwrap_or_default();
+    let (res, err) = update_module_position(Some(params));
+    assert!(err.is_none(), "geen fout verwacht: {:?}", err);
+    assert!(res.is_some());
+
+    // Verifieer de nieuwe structuur op schijf.
+    let now = std::fs::read_to_string(&shell_path).unwrap_or_default();
+    let root: Value = serde_json::from_str(&now).unwrap_or_default();
+    let right = root["modules"]["right"].as_array();
+    assert!(right.is_none() || right.map(|a| a.is_empty()).unwrap_or(true),
+        "clock mag niet meer in right staan");
+    let center = root["modules"]["center"].as_array().unwrap().clone();
+    assert_eq!(center, vec![Value::String("clock".to_string())]);
+
+    std::env::remove_var("HOME");
+    let _ = std::fs::remove_dir_all(fake_home);
+}
+
+/// update_module_position weigert een ongeldige alignment.
+#[test]
+fn test_update_module_position_rejects_bad_alignment() {
+    let params = serde_json::from_str::<Value>(
+        r#"{"module_id":"clock","new_index":0,"alignment":"up"}"#,
+    ).unwrap_or_default();
+    let (res, err) = update_module_position(Some(params));
+    assert!(res.is_none());
+    assert!(err.is_some());
 }

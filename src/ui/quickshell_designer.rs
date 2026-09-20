@@ -14,6 +14,15 @@ use crate::backend::{process, themes};
 
 pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> PreferencesPage {
     let page = PreferencesPage::new();
+
+    // 0. Drag-and-Drop-Canvas (interactieve statusbalk-simulatie)
+    let canvas_group = PreferencesGroup::builder()
+        .title(crate::ui::escape::pango_escape(&tr.drag_title))
+        .build();
+    let canvas = crate::ui::drag_canvas::build_drag_canvas(tr);
+    canvas_group.add(&canvas);
+    page.add(&canvas_group);
+
     let shell_state = Rc::new(RefCell::new(ZenithShellConfig::load_or_default()));
 
     // 1. Thema Presets (1-Klik Stijlen)

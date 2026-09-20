@@ -1,0 +1,9 @@
+{
+  "key": "lazyvim",
+  "name": "LazyVim",
+  "description": "Neovim met de LazyVim-distributie: moderne IDE-setup voor developers in één klik.",
+  "icon": "💻",
+  "packages": ["neovim", "git", "ripgrep", "fd"],
+  "check_binary": "nvim",
+  "flatpak_ids": []
+}

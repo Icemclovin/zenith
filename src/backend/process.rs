@@ -207,7 +207,7 @@ pub fn restart_dunst() {
 }
 
 /// Hulpmiddel om te controleren of een binary in $PATH staat
-fn is_command_available(cmd: &str) -> bool {
+pub fn is_command_available(cmd: &str) -> bool {
     // 1. Directe controle via de PATH-omgevingsvariabele (onafhankelijk van 'which' binary)
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path_var) {

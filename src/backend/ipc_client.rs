@@ -47,3 +47,50 @@ pub fn is_daemon_running() -> bool {
         None => false,
     }
 }
+
+/// Stuur een JSON-RPC-verzoek met params-object en retourneer de `result` van de
+/// daemon, of None als die onbereikbaar is of een fout teruggeeft.
+fn rpc_call_with_params(method: &str, params: Value) -> Option<Value> {
+    let mut req = serde_json::from_str::<Value>("{}").unwrap_or_default();
+    if let Some(o) = req.as_object_mut() {
+        o.insert("jsonrpc".to_string(), Value::String("2.0".to_string()));
+        o.insert("method".to_string(), Value::String(method.to_string()));
+        o.insert("id".to_string(), Value::Number(1i64.into()));
+        o.insert("params".to_string(), params);
+    }
+    let payload = serde_json::to_string(&req).unwrap_or_default();
+    match rpc_call(&payload) {
+        Some(resp) => resp.get("result").cloned(),
+        None => None,
+    }
+}
+
+/// Verplaats een statusbalkmodule naar een andere uitlijning en index via de
+/// daemon (`update_module_position`), gevolgd door een SIGUSR1-redraw.
+/// Returnt `true` als de daemon de wijziging accepteerde.
+pub fn update_module_position(module_id: &str, new_index: i64, alignment: &str) -> bool {
+    let mut params = serde_json::from_str::<Value>("{}").unwrap_or_default();
+    if let Some(o) = params.as_object_mut() {
+        o.insert("module_id".to_string(), Value::String(module_id.to_string()));
+        o.insert("new_index".to_string(), Value::Number(new_index.into()));
+        o.insert("alignment".to_string(), Value::String(alignment.to_string()));
+    }
+    match rpc_call_with_params("update_module_position", params) {
+        Some(result) => result.get("ok").and_then(|b| b.as_bool()).unwrap_or(false),
+        None => false,
+    }
+}
+
+/// Lees een beheerd configbestand via de daemon en retourneer de inhoud.
+/// (Bestanddeel van de openbare IPC-client API voor toekomstige callers.)
+#[allow(dead_code)]
+pub fn get_managed_config(key: &str) -> Option<String> {
+    let mut params = serde_json::from_str::<Value>("{}").unwrap_or_default();
+    if let Some(o) = params.as_object_mut() {
+        o.insert("path".to_string(), Value::String(key.to_string()));
+    }
+    match rpc_call_with_params("sync.get_config", params) {
+        Some(result) => result.get("content").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        None => None,
+    }
+}

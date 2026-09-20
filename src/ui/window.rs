@@ -781,6 +781,17 @@ fn build_window_content(
     row_gen_pal.add_suffix(&btn_gen_pal);
     group_palette.add(&row_gen_pal);
 
+    let row_glass = ActionRow::builder()
+        .title(&tr.palette_glass_title)
+        .subtitle(&tr.palette_glass_sub)
+        .build();
+    let btn_glass = Button::builder().label(&tr.palette_glass_btn).valign(gtk4::Align::Center).build();
+    btn_glass.connect_clicked(move |_| {
+        palette::apply_glassmorphism();
+    });
+    row_glass.add_suffix(&btn_glass);
+    group_palette.add(&row_glass);
+
     page_dash.add(&group_palette);
 
     stack.add_titled(&page_dash, Some("dashboard"), "Dashboard");
@@ -1285,13 +1296,21 @@ fn build_window_content(
     row_gtk_theme.add_suffix(&ent_gtk_theme);
     group_gtk.add(&row_gtk_theme);
 
-    let row_icon_theme = ActionRow::builder().title(&tr.theme_icon_theme).build();
-    let ent_icon_theme = Entry::builder().valign(gtk4::Align::Center).text(gsettings_get("icon-theme").as_str()).build();
-    ent_icon_theme.set_width_chars(14);
-    ent_icon_theme.connect_activate(move |e| {
-        gsettings_set("icon-theme", e.text().as_str());
+    let row_icon_theme = ActionRow::builder().title(&tr.theme_icon_theme).subtitle("Papirus / Adwaita").build();
+    let icon_model = StringList::new(&["Papirus", "Adwaita"]);
+    let dd_icon = DropDown::builder().model(&icon_model).valign(gtk4::Align::Center).build();
+    let cur_icon = gsettings_get("icon-theme");
+    dd_icon.set_selected(match cur_icon.as_str() {
+        "Adwaita" => 1,
+        _ => 0,
     });
-    row_icon_theme.add_suffix(&ent_icon_theme);
+    dd_icon.connect_selected_notify(move |d| {
+        match d.selected() {
+            1 => gsettings_set("icon-theme", "Adwaita"),
+            _ => gsettings_set("icon-theme", "Papirus"),
+        }
+    });
+    row_icon_theme.add_suffix(&dd_icon);
     group_gtk.add(&row_icon_theme);
 
     let row_cursor = ActionRow::builder().title(&tr.theme_cursor).build();
@@ -1303,13 +1322,23 @@ fn build_window_content(
     row_cursor.add_suffix(&ent_cursor);
     group_gtk.add(&row_cursor);
 
-    let row_font = ActionRow::builder().title(&tr.theme_font).build();
-    let ent_font = Entry::builder().valign(gtk4::Align::Center).text(gsettings_get("font-name").as_str()).build();
-    ent_font.set_width_chars(16);
-    ent_font.connect_activate(move |e| {
-        gsettings_set("font-name", e.text().as_str());
+    let row_font = ActionRow::builder().title(&tr.theme_font).subtitle("Inter 11 (UI) · JetBrains Mono 10 (code)").build();
+    let font_model = StringList::new(&["Inter 11", "JetBrains Mono 10", "Cantarell 11 (systeem)"]);
+    let dd_font = DropDown::builder().model(&font_model).valign(gtk4::Align::Center).build();
+    let cur_font = gsettings_get("font-name");
+    dd_font.set_selected(match cur_font.as_str() {
+        "JetBrains Mono 10" => 1,
+        "Cantarell 11" => 2,
+        _ => 0,
     });
-    row_font.add_suffix(&ent_font);
+    dd_font.connect_selected_notify(move |d| {
+        match d.selected() {
+            1 => gsettings_set("font-name", "JetBrains Mono 10"),
+            2 => gsettings_set("font-name", "Cantarell 11"),
+            _ => gsettings_set("font-name", "Inter 11"),
+        }
+    });
+    row_font.add_suffix(&dd_font);
     group_gtk.add(&row_font);
 
     page_themes.add(&group_gtk);
@@ -1351,6 +1380,91 @@ fn build_window_content(
     // PAGINA 9: Systeem & Tools
     // ========================================================
     let page_system = PreferencesPage::new();
+
+    // Tool Hub (EPIC-03): gecureerd pakketbeheer via blueprints + privileged broker.
+    {
+        let group_toolhub = PreferencesGroup::builder()
+            .title(crate::ui::escape::pango_escape(&tr.toolhub_title))
+            .description(crate::ui::escape::pango_escape(&tr.toolhub_desc))
+            .build();
+
+        let catalog = crate::backend::packages::load_catalog();
+        if catalog.is_empty() {
+            let row_empty = ActionRow::builder()
+                .title(crate::ui::escape::pango_escape(&tr.toolhub_none))
+                .build();
+            group_toolhub.add(&row_empty);
+        }
+
+        let t_installed = tr.toolhub_installed.clone();
+        let t_install = tr.toolhub_install.clone();
+        let t_dl_base = tr.toolhub_downloading.clone();
+        let t_ins_base = tr.toolhub_installing.clone();
+        let t_done_base = tr.toolhub_done.clone();
+        let t_fail_base = tr.toolhub_failed.clone();
+
+        for item in &catalog {
+            let title = crate::ui::escape::pango_escape(&format!("{} {}", item.icon, item.name));
+            let desc = crate::ui::escape::pango_escape(&item.description);
+            let row = ActionRow::builder().title(&title).subtitle(&desc).build();
+            let item_copy = item.clone();
+
+            let initial = if item_copy.is_installed() { t_installed.clone() } else { t_install.clone() };
+            let status_lbl = Label::new(Some(initial.as_str()));
+            status_lbl.set_css_classes(&["zenith-dim"]);
+            row.add_suffix(&status_lbl);
+            let stl = Rc::new(RefCell::new(status_lbl));
+
+            if !item_copy.is_installed() {
+                // Verse per-iteratie klonen zodat elke boxed `Fn`-closure zijn
+                // eigen eigendoms-kopie heeft.
+                let t_dl = t_dl_base.clone();
+                let t_ins = t_ins_base.clone();
+                let t_done = t_done_base.clone();
+                let t_fail = t_fail_base.clone();
+                let btn_i = Button::builder().label(&t_install).valign(gtk4::Align::Center).build();
+                let stl_c = Rc::clone(&stl);
+                let key = item_copy.key.clone();
+                let log = crate::backend::packages::log_path(key.as_str());
+                btn_i.connect_clicked(move |_| {
+                    let st = stl_c.borrow();
+                    st.set_label(&t_dl);
+                    crate::backend::packages::spawn_install(&item_copy);
+                    drop(st);
+                    // Clone frisse locals voor de inner timer-closure (boxed
+                    // `Fn` indienste closures geen buitenste captures mogen lenen).
+                    let stl_t = Rc::clone(&stl_c);
+                    let log_t = log.clone();
+                    let t_ins_t = t_ins.clone();
+                    let t_done_t = t_done.clone();
+                    let t_fail_t = t_fail.clone();
+                    let _ = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+                        let st = stl_t.borrow();
+                        match crate::backend::packages::read_status(&log_t) {
+                            crate::backend::packages::PackageStatus::Done => {
+                                st.set_label(&t_done_t);
+                                gtk4::glib::ControlFlow::Break
+                            }
+                            crate::backend::packages::PackageStatus::Failed => {
+                                st.set_label(&t_fail_t);
+                                gtk4::glib::ControlFlow::Break
+                            }
+                            crate::backend::packages::PackageStatus::Installing => {
+                                st.set_label(&t_ins_t);
+                                gtk4::glib::ControlFlow::Continue
+                            }
+                            _ => gtk4::glib::ControlFlow::Continue
+                        }
+                    });
+                });
+                row.add_suffix(&btn_i);
+            }
+            group_toolhub.add(&row);
+        }
+
+        page_system.add(&group_toolhub);
+    }
+
     let group_sys = PreferencesGroup::builder().title(crate::ui::escape::pango_escape(&tr.sidebar_system)).build();
 
     let row_dnd = ActionRow::builder().title(&tr.sys_dnd_title).subtitle(&tr.sys_dnd_sub).build();

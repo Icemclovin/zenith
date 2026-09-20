@@ -1,7 +1,18 @@
 use serde::{Deserialize, Serialize};
-use std::fs::{create_dir_all, read_to_string, File};
-use std::io::Write;
+use std::fs::{create_dir_all, read_to_string};
 use std::path::PathBuf;
+
+/// Schrijf een bestand atomair: eerst naar een temp-bestand in dezelfde map,
+/// daarna een RENAME, zodat lezers nooit een half-geschreven bestand zien.
+fn write_text_atomic_owned(
+    tmp: &std::path::PathBuf,
+    final_path: &std::path::PathBuf,
+    content: &str,
+) -> Result<(), std::io::Error> {
+    std::fs::write(tmp, content)?;
+    let _ = std::fs::rename(tmp, final_path);
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ShellStyling {
@@ -538,8 +549,11 @@ impl ZenithShellConfig {
             }
             let json = serde_json::to_string_pretty(self)
                 .unwrap_or_else(|_| "{}".to_string());
-            let mut file = File::create(&path)?;
-            file.write_all(json.as_bytes())?;
+            // Atomisch wegschrijven: eerst naar een temp-bestand, daarna RENAME.
+            // Dit voorkomt dat Quickshell een gedeeltelijk geschreven (of leeg)
+            // config-bestand inleest tijdens een hot-reload.
+            let tmp = path.with_extension("zk-tmp");
+            write_text_atomic_owned(&tmp, &path, &json)?;
         }
         Ok(())
     }
@@ -948,6 +962,32 @@ mod tests {
         assert_eq!(parsed.layout.position, "left");
         assert_eq!(parsed.custom_scripts.len(), 1);
         assert_eq!(parsed.custom_scripts[0].name, "Weerbericht");
+    }
+
+    #[test]
+    fn test_save_writes_atomically() {
+        // Gebruik een tijdelijke HOME zodat de echte gebruikersconfig niet geraakt wordt.
+        let fake_home = std::path::PathBuf::from("/tmp/zenith-atomic-save-home");
+        std::env::set_var("HOME", &fake_home);
+
+        let cfg = ZenithShellConfig::default();
+        let res = cfg.save();
+        assert!(res.is_ok(), "save should succeed");
+
+        let cfg_path = ZenithShellConfig::config_path();
+        assert!(cfg_path.is_some(), "config path should resolve");
+        let path = cfg_path.unwrap();
+        assert!(path.exists(), "config should exist on disk");
+
+        // Geen temp-bestand achterlaten na de atomische write.
+        let tmp_path = path.with_extension("zk-tmp");
+        assert!(!tmp_path.exists(), "temp file must be removed after atomic rename");
+
+        // Config moet opnieuw ingelezen kunnen worden.
+        let loaded = ZenithShellConfig::load_or_default();
+        assert_eq!(loaded.styling.accent, "#89b4fa");
+
+        std::env::remove_var("HOME");
     }
 
     #[test]

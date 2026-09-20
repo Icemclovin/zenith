@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# zenith-priv-broker — goldige pakketbeheer-laag voor de ZenithOS Tool Hub.
+#
+# Dit hulpprogramma vormt de "privileged broker" tussen de Zenith GUI en de
+# pakketbeheerder. Het:
+#   1. schrijft voortgangsregels ("STATUS ...") naar een logbestand, zodat de
+#      GUI de download/installatie-status live kan tonen,
+#   2. draait de eigenlijke installatie via `pkexec` (polkit) zodat de gebruiker
+#      eenmalig een beheerders-prompt krijgt zonder dat de GUI zelf privileged is.
+#
+# Gebruik:
+#   ZENITH_TOOLHUB_LOG=/path/to/toolhub.log ./zenith-priv-broker install <pakket...>
+#
+set -u
+
+LOG="${ZENITH_TOOLHUB_LOG:-/tmp/zenith-toolhub.log}"
+STATUS() { printf 'STATUS %s\n' "$1" >>"$LOG"; }
+
+STATUS "download"
+
+case "${1:-}" in
+  install)
+    shift
+    if [ "$#" -eq 0 ]; then
+      STATUS "failed"; exit 1
+    fi
+
+    # AUR-ondersteuning wanneer yay aanwezig is en een van de pakketten niet in
+    # de officiële repos zit; anders vallen we terug op de klassieke pacman.
+    AUR=0
+    if command -v yay >/dev/null 2>&1; then
+      for p in "$@"; do
+        if ! pacman -Si "$p" >/dev/null 2>&1; then
+          AUR=1; break
+        fi
+      done
+    fi
+
+    if [ "$AUR" -eq 1 ]; then
+      # AUR moet als gewone gebruiker bouwen; alleen sinkronisatie is bevoorrecht.
+      STATUS "installing"
+      if yay -S --noconfirm "$@" >>"$LOG" 2>&1; then
+        STATUS "done"; exit 0
+      fi
+    else
+      STATUS "installing"
+      if pkexec pacman -S --noconfirm --needed "$@" >>"$LOG" 2>&1; then
+        STATUS "done"; exit 0
+      fi
+    fi
+
+    STATUS "failed"; exit 1
+    ;;
+  *)
+    STATUS "failed"; exit 2
+    ;;
+esac
