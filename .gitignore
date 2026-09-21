@@ -1,2 +1,6 @@
 /target
 *.pkg.tar.zst
+zenith.db
+zenith.db.tar.zst
+zenith.files
+zenith.files.tar.zst
