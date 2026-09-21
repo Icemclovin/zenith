@@ -1,10 +1,17 @@
 # Maintainer: Zenith Team <dev@zenith.org>
+# ZenithOS Control Center + zenithd daemon — een pakket voor `pacman -S`.
+#
+# Vanuit deze PKGBUILD bouw je het `.pkg.tar.zst`-artefact dat via een repo/
+# GitHub Release geïnstalleerd kan worden met:
+#   sudo pacman -S zenith-control
+#
+_zenith_commit="61d524c9a9e0bd723d39cf81b8ec22e211a427fb"
 pkgname=zenith-control
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="Next-generation visual studio and control center for Hyprland and Quickshell"
+pkgdesc="Visual studio en controlecentrum voor Hyprland & Quickshell (zenith + zenithd JSON-RPC-daemon)"
 arch=('x86_64')
-url="https://github.com/zenith/zenith"
+url="https://github.com/Icemclovin/zenith"
 license=('MIT')
 depends=(
     'gtk4'
@@ -13,29 +20,42 @@ depends=(
     'waybar'
     'rofi'
     'kitty'
+    'dolphin'
     'brightnessctl'
     'playerctl'
     'wireplumber'
     'bluez-utils'
     'networkmanager'
+    'inter'
     'ttf-jetbrains-mono-nerd'
+    'papirus-icon-theme'
     'polkit'
     'xdg-utils'
-    'which'
-    'procps-ng'
-    'psmisc'
     'curl'
     'jq'
+    'procps-ng'
+    'psmisc'
+    'grimblast'
+    'hyprland'
 )
-makedepends=('cargo' 'rust')
-source=()
+makedepends=('cargo' 'rust' 'git')
+
+source=("${url}/archive/${_zenith_commit}.tar.gz")
+sha256sums=('44254dd18497779fa4f661ea68f160cfc4f4f4b27840629a0513ef71f7ee67ad')
+noextract=()
 
 build() {
+    cd "$srcdir/zenith-${_zenith_commit}"
     cargo build --release
 }
 
 package() {
+    cd "$srcdir/zenith-${_zenith_commit}"
     install -Dm755 "target/release/zenith" "${pkgdir}/usr/bin/zenith"
+    install -Dm755 "target/release/zenithd" "${pkgdir}/usr/bin/zenithd"
+
+    # Private broker (polkit) voor de Tool Hub
+    install -Dm755 "scripts/zenith-priv-broker" "${pkgdir}/usr/lib/zenith/zenith-priv-broker"
 
     # Desktop entry
     install -d "${pkgdir}/usr/share/applications"
@@ -51,4 +71,20 @@ Categories=Settings;System;Utility;
 Keywords=Hyprland;Settings;Control;Waybar;Quickshell;Theme;
 StartupWMClass=org.zenith.control
 DESKTOPEOF
+
+    # zenitd daemon als systeemdienst (user)
+    install -d "${pkgdir}/usr/lib/systemd/user"
+    cat << 'UNITEOF' > "${pkgdir}/usr/lib/systemd/user/zenithd.service"
+[Unit]
+Description=Zenith IPC daemon (JSON-RPC 2.0)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/zenithd
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target
+UNITEOF
 }

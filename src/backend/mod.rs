@@ -5,6 +5,7 @@ pub mod fastfetch;
 pub mod hyprland;
 pub mod i18n;
 pub mod ipc_client;
+pub mod keybinds;
 pub mod packages;
 pub mod palette;
 pub mod process;

@@ -4,6 +4,7 @@ pub mod drag_canvas;
 pub mod escape;
 pub mod fastfetch_designer;
 pub mod icon_studio;
+pub mod keybinds_designer;
 pub mod lockscreen_designer;
 pub mod osd_designer;
 pub mod quickshell_designer;

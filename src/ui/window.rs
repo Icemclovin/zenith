@@ -225,6 +225,7 @@ fn build_window_content(
         NavItem { id: "hyprland", title: tr.sidebar_hyprland.clone(), icon: "applications-graphics-symbolic", advanced: false },
         NavItem { id: "statusbar", title: tr.sidebar_statusbar.clone(), icon: "utilities-terminal-symbolic", advanced: false },
         NavItem { id: "control_center", title: tr.sidebar_control_center.clone(), icon: "preferences-desktop-keyboard-shortcuts-symbolic", advanced: false },
+        NavItem { id: "keybinds", title: tr.sidebar_keybinds.clone(), icon: "input-keyboard-symbolic", advanced: false },
         NavItem { id: "osd", title: tr.sidebar_osd.clone(), icon: "video-display-symbolic", advanced: false },
         NavItem { id: "lockscreen", title: tr.sidebar_lockscreen.clone(), icon: "system-lock-screen-symbolic", advanced: false },
         NavItem { id: "themes", title: tr.sidebar_themes.clone(), icon: "applications-accessories-symbolic", advanced: false },
@@ -1123,7 +1124,13 @@ fn build_window_content(
     stack.add_titled(&page_cc, Some("control_center"), &tr.sidebar_control_center);
 
     // ========================================================
-    // PAGINA 5: On-Screen Display (OSD) Designer
+    // PAGINA 5: Toetsenbord & Sneltoetsen
+    // ========================================================
+    let page_keybinds = crate::ui::keybinds_designer::build_keybinds_page(&tr);
+    stack.add_titled(&page_keybinds, Some("keybinds"), &tr.sidebar_keybinds);
+
+    // ========================================================
+    // PAGINA 6: On-Screen Display (OSD) Designer
     // ========================================================
     let page_osd = crate::ui::osd_designer::build_osd_page(state, &tr);
     stack.add_titled(&page_osd, Some("osd"), &tr.sidebar_osd);
