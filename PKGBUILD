@@ -5,7 +5,7 @@
 # GitHub Release geïnstalleerd kan worden met:
 #   sudo pacman -S zenith-control
 #
-_zenith_commit="61d524c9a9e0bd723d39cf81b8ec22e211a427fb"
+_zenith_commit="4e94b94b88fb33d1dc3a0eeea0d2e05a4f187bea"
 pkgname=zenith-control
 pkgver=0.1.0
 pkgrel=1
@@ -41,7 +41,7 @@ depends=(
 makedepends=('cargo' 'rust' 'git')
 
 source=("${url}/archive/${_zenith_commit}.tar.gz")
-sha256sums=('44254dd18497779fa4f661ea68f160cfc4f4f4b27840629a0513ef71f7ee67ad')
+sha256sums=('fd632754d92f103bc9dc278334078756527e694f5fdb7a93a94aa6a670c424dc')
 noextract=()
 
 build() {
