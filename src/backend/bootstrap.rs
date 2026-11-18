@@ -90,7 +90,11 @@ fn ensure_zenith_panel(path: &Path, content: &str) {
         return ensure_file_exists(path, content);
     };
     // Oudere Zenith-versies: de panelen gebruiken ZenithPopup, en ZenithPopup.qml zelf heeft deze kopregel.
-    let ours = current.contains("zenith-panel") || current.contains("ZenithPopup") || current.contains("Gedeeld pop-uppaneel van Zenith");
+    let ours = ["zenith-panel", "ZenithPopup", "Gedeeld pop-uppaneel van Zenith",
+        // oude Control Center en lockscreen (met onveilige wachtwoord-terugval)
+        "Dismiss Overlay: klik buiten paneel sluit Control Center", "Native PAM authenticatie"]
+        .iter()
+        .any(|m| current.contains(m));
     if current == content || !ours {
         return;
     }
@@ -565,12 +569,13 @@ Scope {
     Panels.Media {}
     Panels.Launcher {}
     Panels.Notifications {}
+    Panels.Lockscreen {}
 }
 "###;
     if shell_qml.exists() {
         if let Ok(content) = read_to_string(&shell_qml) {
             // Als het bestaande bestand verouderd is (mist ModuleLoader, FileView, Scope of Panels)
-            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") || !content.contains("Panels.Notifications") {
+            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") || !content.contains("Panels.Lockscreen") {
                 // Eigen aanpassingen nooit kwijtraken: unieke back-up, en alleen overschrijven als die gelukt is.
                 let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
                 let backup = qs_dir.join(format!("shell.qml.bak-{}", stamp));
@@ -2880,9 +2885,10 @@ Scope {
 }
 "###,
     );
-    ensure_file_exists(
+    ensure_zenith_panel(
         &dir.join("ControlCenter.qml"),
-        r###"import QtQuick
+        r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
+import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -2907,6 +2913,7 @@ Scope {
 
     readonly property var ccConfig: ccScope.shellConfig.control_center || {}
     readonly property var customScripts: ccScope.shellConfig.custom_scripts || []
+    readonly property var icons: ccScope.shellConfig.custom_icons || {}
     readonly property bool isCcEnabled: ccScope.ccConfig.enabled !== undefined ? ccScope.ccConfig.enabled : true
     readonly property int ccWidth: ccScope.ccConfig.width || 380
     readonly property int ccMaxHeight: ccScope.ccConfig.max_height || 600
@@ -2918,6 +2925,38 @@ Scope {
     readonly property color textColor: (ccScope.shellConfig.styling && ccScope.shellConfig.styling.text_color) || "#cdd6f4"
 
     property bool isCcActive: false
+
+    // Animaties volgen Zenith → Statusbalk → Animaties
+    readonly property var an: ccScope.shellConfig.animations || {}
+    readonly property int ms: ccScope.an.duration_ms !== undefined ? Math.max(ccScope.an.duration_ms, 120) : 240
+    readonly property int easing: {
+        var e = Easing[ccScope.an.curve || "OutBack"];
+        return e !== undefined ? e : Easing.OutBack;
+    }
+
+    // Snelle acties; afmelden/herstarten/uitschakelen vragen een tweede klik binnen 3 s
+    property string confirmAction: ""
+    readonly property string lang: ccScope.shellConfig.language || "nl"
+    readonly property var labels: ({
+        nl: { lock: "Vergrendel", settings: "Zenith", logout: "Afmelden", reboot: "Herstart", poweroff: "Uit", sure: "Zeker?" },
+        en: { lock: "Lock", settings: "Zenith", logout: "Log out", reboot: "Restart", poweroff: "Power off", sure: "Sure?" },
+        de: { lock: "Sperren", settings: "Zenith", logout: "Abmelden", reboot: "Neustart", poweroff: "Aus", sure: "Sicher?" },
+        es: { lock: "Bloquear", settings: "Zenith", logout: "Salir", reboot: "Reiniciar", poweroff: "Apagar", sure: "¿Seguro?" }
+    })
+    function label(k) { return (ccScope.labels[ccScope.lang] || ccScope.labels.nl)[k]; }
+    Timer { id: confirmReset; interval: 3000; onTriggered: ccScope.confirmAction = "" }
+    Process { id: actionProc }
+    function runAction(a) {
+        if (a.confirm && ccScope.confirmAction !== a.id) {
+            ccScope.confirmAction = a.id;
+            confirmReset.restart();
+            return;
+        }
+        ccScope.confirmAction = "";
+        ccScope.isCcActive = false;
+        actionProc.command = ["bash", "-c", a.cmd];
+        actionProc.running = true;
+    }
 
     // Hyprland / Quickshell IPC Handler
     IpcHandler {
@@ -2997,10 +3036,10 @@ Scope {
             }
 
             Behavior on opacity {
-                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: Math.max(140, ccScope.ms * 0.8); easing.type: Easing.OutCubic }
             }
             Behavior on scale {
-                NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.18 }
+                NumberAnimation { duration: ccScope.ms; easing.type: ccScope.easing }
             }
 
             Flickable {
@@ -3032,7 +3071,7 @@ Scope {
                             color: Qt.alpha(ccScope.textColor, 0.12)
                             Text {
                                 anchors.centerIn: parent
-                                text: "✕"
+                                text: (ccScope.icons && ccScope.icons.close) || "✕"
                                 font.pixelSize: 10
                                 color: ccScope.textColor
                             }
@@ -3040,6 +3079,54 @@ Scope {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: ccScope.isCcActive = false
+                            }
+                        }
+                    }
+
+                    // Snelle acties
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Repeater {
+                            model: [
+                                { id: "lock", icon: "🔒", confirm: false, cmd: "quickshell -p \"$HOME/.config/quickshell/shell.qml\" ipc call lockscreen lock" },
+                                { id: "settings", icon: "⚙️", confirm: false, cmd: "zenith" },
+                                { id: "logout", icon: "🚪", confirm: true, cmd: "hyprctl dispatch 'hl.dsp.exit()' 2>/dev/null | grep -q ok || hyprctl dispatch exit" },
+                                { id: "reboot", icon: "🔄", confirm: true, cmd: "systemctl reboot" },
+                                { id: "poweroff", icon: "⏻", confirm: true, cmd: "systemctl poweroff" }
+                            ]
+                            Rectangle {
+                                id: actBtn
+                                required property var modelData
+                                readonly property bool confirming: ccScope.confirmAction === modelData.id
+                                Layout.fillWidth: true
+                                implicitHeight: 54
+                                radius: 12
+                                color: confirming ? Qt.alpha("#f38ba8", 0.28) : (actArea.containsMouse ? Qt.alpha(ccScope.textColor, 0.12) : Qt.alpha(ccScope.textColor, 0.05))
+                                border.width: confirming ? 1 : 0
+                                border.color: "#f38ba8"
+                                scale: actArea.pressed ? 0.94 : 1.0
+                                Behavior on color { ColorAnimation { duration: 140 } }
+                                Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutBack } }
+                                ColumnLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 2
+                                    Text { Layout.alignment: Qt.AlignHCenter; text: actBtn.modelData.icon; font.pixelSize: 16 }
+                                    Text {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        text: actBtn.confirming ? ccScope.label("sure") : ccScope.label(actBtn.modelData.id)
+                                        color: ccScope.textColor
+                                        font.pixelSize: 9
+                                        font.bold: actBtn.confirming
+                                    }
+                                }
+                                MouseArea {
+                                    id: actArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: ccScope.runAction(actBtn.modelData)
+                                }
                             }
                         }
                     }
@@ -3065,7 +3152,7 @@ Scope {
                                         if (s.id === sId) {
                                             item.scriptCommand = s.command || "";
                                             item.intervalSec = s.interval_seconds || 10;
-                                            item.scriptIcon = s.icon || "💻";
+                                            item.scriptIcon = s.icon || ((ccScope.icons && ccScope.icons.script) || "💻");
                                             item.onClickCmd = s.on_click || "";
                                             item.cardName = s.name || "Custom Script";
                                             break;
@@ -3076,6 +3163,447 @@ Scope {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+"###,
+    );
+    ensure_zenith_panel(
+        &dir.join("Lockscreen.qml"),
+        r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Effects
+import Quickshell
+import Quickshell.Wayland
+import Quickshell.Io
+import Quickshell.Services.Pam
+import Quickshell.Services.Mpris
+
+// Zenith-lockscreen: echte sessie-lock (ext-session-lock) met PAM.
+// Veiligheid: het wachtwoord gaat alleen naar PAM (nooit naar een proces of log),
+// en vergrendelen weigert als de PAM-config ontbreekt, zodat je nooit buitengesloten raakt.
+Scope {
+    id: ls
+
+    readonly property string pamService: "quickshell"
+    property bool isLocked: false
+    property bool isPreview: false
+    property bool busy: false
+    property bool unlocking: false
+    property int failCount: 0
+    property string statusText: ""
+    property string pendingPass: ""
+
+    FileView {
+        id: cfgFile
+        path: Quickshell.env("HOME") + "/.config/quickshell/zenith-shell.json"
+        watchChanges: true
+    }
+    readonly property var cfg: {
+        try {
+            var t = cfgFile.text().trim();
+            if (t.length > 0) return JSON.parse(t);
+        } catch (e) {}
+        return {};
+    }
+    readonly property var lc: ls.cfg.lockscreen || {}
+    readonly property var st: ls.cfg.styling || {}
+    readonly property var an: ls.cfg.animations || {}
+    readonly property color fg: ls.st.text_color || "#cdd6f4"
+    readonly property color accent: ls.st.accent || "#89b4fa"
+    readonly property color surface: ls.st.pill_bg || "#181825"
+    readonly property color border: ls.st.border_color || "#45475a"
+    readonly property int ms: ls.an.duration_ms !== undefined ? Math.max(ls.an.duration_ms, 120) : 250
+    readonly property int easing: {
+        var e = Easing[ls.an.curve || "OutCubic"];
+        return e !== undefined ? e : Easing.OutCubic;
+    }
+    readonly property string lang: ls.cfg.language || "nl"
+    readonly property var locale: Qt.locale(({ nl: "nl_NL", en: "en_GB", de: "de_DE", es: "es_ES" })[ls.lang] || "nl_NL")
+    readonly property var dict: ({
+        nl: { password: "Wachtwoord", checking: "Controleren…", wrong: "Onjuist wachtwoord", welcome: "Welkom terug", preview: "Voorbeeld — Esc om te sluiten" },
+        en: { password: "Password", checking: "Checking…", wrong: "Wrong password", welcome: "Welcome back", preview: "Preview — press Esc to close" },
+        de: { password: "Passwort", checking: "Wird geprüft…", wrong: "Falsches Passwort", welcome: "Willkommen zurück", preview: "Vorschau — Esc zum Schließen" },
+        es: { password: "Contraseña", checking: "Comprobando…", wrong: "Contraseña incorrecta", welcome: "Bienvenido de nuevo", preview: "Vista previa — Esc para cerrar" }
+    })
+    function tr(k) { return (ls.dict[ls.lang] || ls.dict.nl)[k]; }
+    readonly property var cards: ls.lc.cards || ["clock", "avatar", "auth", "mpris", "battery_network"]
+    function shows(card) { return ls.cards.indexOf(card) !== -1 || card === "auth"; }
+
+    // Bestaat de PAM-config? Zonder kan niemand ontgrendelen, dus dan niet vergrendelen.
+    FileView {
+        id: pamCfg
+        path: "/etc/pam.d/" + ls.pamService
+    }
+
+    IpcHandler {
+        target: "lockscreen"
+        function lock() { ls.lock(); }
+        function preview() { ls.isPreview = !ls.isPreview; }
+        // Bewust geen unlock(): ontgrendelen kan alleen met je wachtwoord.
+    }
+
+    function lock() {
+        if (ls.lc.enabled === false) return;
+        if (pamCfg.text().length === 0) {
+            console.warn("Zenith-lockscreen: /etc/pam.d/" + ls.pamService + " ontbreekt; niet vergrendeld.");
+            return;
+        }
+        ls.statusText = "";
+        ls.unlocking = false;
+        ls.isLocked = true;
+    }
+
+    function submit(pass) {
+        if (ls.busy || pass.length === 0) return;
+        ls.pendingPass = pass;
+        ls.busy = true;
+        ls.statusText = ls.tr("checking");
+        if (!pam.start()) {
+            ls.pendingPass = "";
+            ls.busy = false;
+            ls.statusText = "PAM kon niet starten";
+            ls.failCount++;
+        }
+    }
+
+    function succeeded() {
+        ls.busy = false;
+        ls.statusText = "";
+        if (ls.isPreview && !ls.isLocked) {
+            ls.isPreview = false;
+            return;
+        }
+        // Eerst uitfaden, dan pas de sessie vrijgeven
+        ls.unlocking = true;
+        unlockTimer.restart();
+    }
+
+    Timer {
+        id: unlockTimer
+        interval: ls.ms
+        onTriggered: { ls.isLocked = false; ls.unlocking = false; }
+    }
+
+    PamContext {
+        id: pam
+        config: ls.pamService
+        user: Quickshell.env("USER") || ""
+        onResponseRequiredChanged: {
+            if (responseRequired && ls.pendingPass.length > 0) {
+                respond(ls.pendingPass);
+                ls.pendingPass = "";
+            }
+        }
+        onCompleted: result => {
+            ls.pendingPass = "";
+            if (result === PamResult.Success) {
+                ls.succeeded();
+            } else {
+                ls.busy = false;
+                ls.statusText = ls.tr("wrong");
+                ls.failCount++;
+            }
+        }
+        onError: err => {
+            ls.pendingPass = "";
+            ls.busy = false;
+            ls.statusText = "PAM: " + err;
+            ls.failCount++;
+        }
+    }
+
+    // Echte vergrendeling: één oppervlak per scherm
+    WlSessionLock {
+        locked: ls.isLocked
+        surface: Component {
+            WlSessionLockSurface {
+                color: "black"
+                LockView { anchors.fill: parent }
+            }
+        }
+    }
+
+    // Veilige voorbeeldmodus (gewoon venster, Esc sluit)
+    PanelWindow {
+        visible: ls.isPreview && !ls.isLocked
+        color: "black"
+        anchors { top: true; bottom: true; left: true; right: true }
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+        LockView { anchors.fill: parent; preview: true }
+    }
+
+    component LockView: Item {
+        id: view
+        property bool preview: false
+        property date now: new Date()
+
+        Timer { interval: 1000; running: true; repeat: true; onTriggered: view.now = new Date() }
+
+        // Achtergrond: wallpaper (optioneel vervaagd) of effen zwart
+        readonly property string mode: ls.lc.background_mode || "wallpaper_blur"
+        Image {
+            id: bg
+            anchors.fill: parent
+            visible: false
+            source: view.mode === "solid_black" ? ""
+                  : view.mode === "custom_image" && ls.lc.custom_image_path ? "file://" + ls.lc.custom_image_path
+                  : ls.cfg.wallpaper_path ? "file://" + ls.cfg.wallpaper_path : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+        }
+        MultiEffect {
+            anchors.fill: parent
+            source: bg
+            visible: bg.status === Image.Ready
+            blurEnabled: view.mode === "wallpaper_blur"
+            blurMax: 64
+            blur: Math.min(1, (ls.lc.blur_radius !== undefined ? ls.lc.blur_radius : 24) / 40)
+            autoPaddingEnabled: false
+        }
+        Rectangle {
+            anchors.fill: parent
+            color: "black"
+            opacity: view.mode === "solid_black" ? 1 : (ls.lc.dim_opacity !== undefined ? ls.lc.dim_opacity : 0.4)
+        }
+
+        // Alle inhoud fadet/schaalt in bij vergrendelen en uit bij ontgrendelen
+        Item {
+            id: content
+            anchors.fill: parent
+            opacity: ls.unlocking ? 0 : 1
+            scale: ls.unlocking ? 1.04 : 1
+            Behavior on opacity { NumberAnimation { duration: ls.ms; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: ls.ms; easing.type: ls.easing } }
+            Component.onCompleted: { opacity = 0; opacity = Qt.binding(() => ls.unlocking ? 0 : 1); }
+
+            readonly property string preset: ls.lc.layout_preset || "centered"
+
+            GridLayout {
+                columns: content.preset === "split" ? 2 : 1
+                columnSpacing: 120
+                rowSpacing: 28
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.horizontalCenter: content.preset === "left_aligned" ? undefined : parent.horizontalCenter
+                anchors.left: content.preset === "left_aligned" ? parent.left : undefined
+                anchors.leftMargin: 110
+
+                // Klok, datum, media
+                ColumnLayout {
+                    spacing: 18
+                    Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                    ColumnLayout {
+                        visible: ls.shows("clock")
+                        spacing: 2
+                        Text {
+                            Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                            text: Qt.formatTime(view.now, ls.lc.clock_format || "HH:mm")
+                            color: ls.fg
+                            font.pixelSize: ls.lc.clock_font_size || 96
+                            font.family: ls.lc.clock_font_family || "JetBrains Mono"
+                            font.weight: Font.Light
+                        }
+                        Text {
+                            Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                            text: ls.locale.toString(view.now, "dddd d MMMM")
+                            color: ls.accent
+                            font.pixelSize: Math.max(16, (ls.lc.clock_font_size || 96) * 0.22)
+                            font.capitalization: Font.Capitalize
+                        }
+                    }
+
+                    // Media (alleen als er iets speelt of gepauzeerd is)
+                    Rectangle {
+                        id: mediaCard
+                        readonly property var player: Mpris.players.values.length > 0 ? Mpris.players.values[0] : null
+                        visible: ls.shows("mpris") && player !== null
+                        Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                        implicitWidth: 340
+                        implicitHeight: 72
+                        radius: 18
+                        color: Qt.alpha(ls.surface, 0.7)
+                        border.width: 1
+                        border.color: Qt.alpha(ls.border, 0.6)
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 12
+                            Rectangle {
+                                implicitWidth: 48; implicitHeight: 48; radius: 12; clip: true
+                                color: Qt.alpha(ls.fg, 0.08)
+                                Image { anchors.fill: parent; source: mediaCard.player ? mediaCard.player.trackArtUrl : ""; fillMode: Image.PreserveAspectCrop; asynchronous: true }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                Text { Layout.fillWidth: true; text: mediaCard.player ? mediaCard.player.trackTitle : ""; color: ls.fg; font.bold: true; elide: Text.ElideRight }
+                                Text { Layout.fillWidth: true; text: mediaCard.player ? mediaCard.player.trackArtist : ""; color: Qt.alpha(ls.fg, 0.6); elide: Text.ElideRight }
+                            }
+                            Text {
+                                text: mediaCard.player && mediaCard.player.isPlaying ? "⏸" : "▶"
+                                color: ls.fg
+                                font.pixelSize: 20
+                                MouseArea {
+                                    anchors.fill: parent
+                                    anchors.margins: -8
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: if (mediaCard.player) mediaCard.player.togglePlaying()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Gebruiker, wachtwoord, status
+                ColumnLayout {
+                    spacing: 16
+                    Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+
+                    ColumnLayout {
+                        visible: ls.shows("avatar")
+                        spacing: 10
+                        Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                        Rectangle {
+                            Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                            implicitWidth: 88; implicitHeight: 88; radius: 44
+                            color: Qt.alpha(ls.accent, 0.18)
+                            border.width: 2
+                            border.color: ls.accent
+                            clip: true
+                            Image {
+                                id: avatar
+                                anchors.fill: parent
+                                anchors.margins: 2
+                                source: ls.lc.user_avatar_path ? "file://" + ls.lc.user_avatar_path : "file://" + Quickshell.env("HOME") + "/.face"
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                layer.enabled: true
+                                layer.effect: MultiEffect { maskEnabled: true; maskSource: avatarMask }
+                            }
+                            Rectangle { id: avatarMask; anchors.fill: avatar; radius: width / 2; visible: false; layer.enabled: true }
+                            Text {
+                                anchors.centerIn: parent
+                                visible: avatar.status !== Image.Ready
+                                text: (Quickshell.env("USER") || "?").charAt(0).toUpperCase()
+                                color: ls.accent
+                                font.pixelSize: 36
+                                font.bold: true
+                            }
+                        }
+                        Text {
+                            Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                            text: (ls.lc.custom_greeting && ls.lc.custom_greeting.length > 0 ? ls.lc.custom_greeting : ls.tr("welcome") + ", {user}").replace("{user}", Quickshell.env("USER") || "")
+                            color: ls.fg
+                            font.pixelSize: 18
+                        }
+                    }
+
+                    // Wachtwoordveld met schud-animatie bij een fout
+                    Rectangle {
+                        id: field
+                        Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                        implicitWidth: 320
+                        implicitHeight: 52
+                        radius: 26
+                        color: Qt.alpha(ls.surface, 0.75)
+                        border.width: input.activeFocus ? 2 : 1
+                        border.color: ls.statusText === ls.tr("wrong") ? "#f38ba8" : (input.activeFocus ? ls.accent : Qt.alpha(ls.border, 0.7))
+                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                        transform: Translate { id: shake }
+
+                        SequentialAnimation {
+                            id: shakeAnim
+                            loops: 2
+                            NumberAnimation { target: shake; property: "x"; to: -12; duration: 45 }
+                            NumberAnimation { target: shake; property: "x"; to: 12; duration: 90 }
+                            NumberAnimation { target: shake; property: "x"; to: 0; duration: 45 }
+                        }
+                        Connections {
+                            target: ls
+                            function onFailCountChanged() { shakeAnim.restart(); input.text = ""; }
+                        }
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 20
+                            anchors.rightMargin: 20
+                            spacing: 10
+                            Text { text: ls.busy ? "⏳" : "🔒"; font.pixelSize: 16 }
+                            TextInput {
+                                id: input
+                                Layout.fillWidth: true
+                                echoMode: TextInput.Password
+                                passwordCharacter: "●"
+                                color: ls.fg
+                                font.pixelSize: 16
+                                font.letterSpacing: 2
+                                clip: true
+                                enabled: !ls.busy
+                                focus: true
+                                Component.onCompleted: forceActiveFocus()
+                                Keys.onReturnPressed: ls.submit(text)
+                                Keys.onEnterPressed: ls.submit(text)
+                                Keys.onEscapePressed: { if (view.preview) ls.isPreview = false; else text = ""; }
+                                Text {
+                                    visible: input.text.length === 0
+                                    text: ls.tr("password")
+                                    color: Qt.alpha(ls.fg, 0.4)
+                                    font.pixelSize: 16
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                        visible: ls.statusText.length > 0
+                        text: ls.statusText
+                        color: ls.statusText === ls.tr("checking") ? Qt.alpha(ls.fg, 0.6) : "#f38ba8"
+                        font.pixelSize: 13
+                    }
+
+                    // Batterij (alleen op apparaten met een accu)
+                    Text {
+                        id: battery
+                        property string level: ""
+                        Layout.alignment: content.preset === "centered" ? Qt.AlignHCenter : Qt.AlignLeft
+                        visible: ls.shows("battery_network") && level.length > 0
+                        text: level
+                        color: Qt.alpha(ls.fg, 0.7)
+                        font.pixelSize: 13
+                        Process {
+                            id: batProc
+                            command: ["bash", "-c", "for b in /sys/class/power_supply/BAT*; do [ -r \"$b/capacity\" ] && echo \"$(cat \"$b/capacity\") $(cat \"$b/status\")\" && break; done"]
+                            stdout: StdioCollector {
+                                onStreamFinished: {
+                                    var p = this.text.trim().split(" ");
+                                    battery.level = p.length >= 2 ? (p[1] === "Charging" ? "⚡ " : "🔋 ") + p[0] + "%" : "";
+                                }
+                            }
+                        }
+                        Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: batProc.running = true }
+                    }
+                }
+            }
+
+            // Voorbeeld-badge
+            Rectangle {
+                visible: view.preview
+                anchors.top: parent.top
+                anchors.topMargin: 28
+                anchors.horizontalCenter: parent.horizontalCenter
+                implicitWidth: badge.implicitWidth + 28
+                implicitHeight: 34
+                radius: 17
+                color: Qt.alpha(ls.surface, 0.9)
+                border.width: 1
+                border.color: ls.accent
+                Text { id: badge; anchors.centerIn: parent; text: "👁 " + ls.tr("preview"); color: ls.fg; font.pixelSize: 13; font.bold: true }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: ls.isPreview = false }
             }
         }
     }
@@ -4549,6 +5077,12 @@ mod tests {
         std::fs::write(&popup, "// Gedeeld pop-uppaneel van Zenith: oud").unwrap();
         ensure_zenith_panel(&popup, "// zenith-panel nieuw");
         assert_eq!(std::fs::read_to_string(&popup).unwrap(), "// zenith-panel nieuw");
+
+        // Oude lockscreen met onveilige wachtwoord-terugval wordt vervangen
+        let lock = dir.join("Lockscreen.qml");
+        std::fs::write(&lock, "// Native PAM authenticatie\nsu -c").unwrap();
+        ensure_zenith_panel(&lock, "// zenith-panel lock");
+        assert_eq!(std::fs::read_to_string(&lock).unwrap(), "// zenith-panel lock");
 
         // Eigen bestand van de gebruiker: nooit overschrijven
         std::fs::write(&p, "Rectangle { color: \"red\" }").unwrap();
