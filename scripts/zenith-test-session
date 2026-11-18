@@ -40,9 +40,11 @@ rebind("SHIFT + Print", "grim -g \"$(slurp)\" - | satty -f -", media)
 rebind("SUPER + Print", SHOTS .. "grim \"$f\" && wl-copy < \"$f\"", media)
 rebind("SUPER + SHIFT + Print", "grim - | satty -f -", media)
 
--- Vergrendelen
-rebind("XF86PowerOff", "hyprlock", media)
-rebind("SUPER + L", "hyprlock", media)
+-- Vergrendelen: Zenith-lockscreen; draait Zenith niet, dan hyprlock met zijn meegeleverde config
+-- (zonder ~/.config/hypr/hyprlock.conf stopt hyprlock anders direct).
+local LOCK = IPC .. "lockscreen lock || hyprlock -c /usr/share/hypr/hyprlock.conf"
+rebind("XF86PowerOff", LOCK, media)
+rebind("SUPER + L", LOCK, media)
 
 -- Shell-acties → Zenith
 rebind("SUPER + R", "quickshell kill -p " .. CFG .. "; quickshell -d -p " .. CFG)
