@@ -341,6 +341,32 @@ pub fn build_quickshell_page(
     page.add(&group_colors);
 
     // ========================================================
+    // 5b. Animaties in de balk (shell.qml leest `animations`)
+    // ========================================================
+    let group_anim = PreferencesGroup::builder().title(&tr.hypr_animations).description(&tr.sb_anim_desc).build();
+    let curves = ["OutCubic", "OutBack", "OutElastic", "InOutQuad", "Linear"];
+    let row_curve = ComboRow::builder()
+        .title(tr.sb_anim_curve.as_str())
+        .model(&StringList::new(&[&tr.anim_smooth, &tr.anim_bouncy, &tr.anim_elastic, &tr.anim_soft, &tr.anim_linear]))
+        .selected(curves.iter().position(|c| *c == init.animations.curve).unwrap_or(0) as u32)
+        .build();
+    let c = Rc::clone(&commit);
+    row_curve.connect_selected_notify(move |r| {
+        let v = curves[r.selected() as usize % curves.len()];
+        c(&|sh| sh.animations.curve = v.to_string());
+    });
+    group_anim.add(&row_curve);
+    let c = Rc::clone(&commit);
+    group_anim.add(&rows::slider_row(&tr.sb_anim_duration, 0.0, 800.0, 10.0, init.animations.duration_ms as f64, |v| format!("{} ms", v), move |v| {
+        c(&|sh| sh.animations.duration_ms = v as i32)
+    }));
+    let c = Rc::clone(&commit);
+    group_anim.add(&rows::switch_row(&tr.sb_hover_zoom, &tr.sb_hover_zoom_sub, init.animations.hover_zoom, move |on| c(&|sh| sh.animations.hover_zoom = on)));
+    let c = Rc::clone(&commit);
+    group_anim.add(&rows::switch_row(&tr.sb_fade_in, &tr.sb_fade_in_sub, init.animations.fade_in, move |on| c(&|sh| sh.animations.fade_in = on)));
+    page.add(&group_anim);
+
+    // ========================================================
     // 6. Panelen & pop-ups
     // ========================================================
     let group_panels = PreferencesGroup::builder().title(crate::ui::escape::pango_escape(&tr.sb_panels)).description(&tr.sb_panels_desc).build();

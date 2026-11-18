@@ -1,13 +1,109 @@
 use serde::Deserialize;
 use std::process::Command;
 
-/// Zet één Hyprland-optie live via `hyprctl keyword`.
+/// Hyprland >= 0.55 met `hyprland.lua` accepteert geen `hyprctl keyword` meer, alleen `eval`.
+pub fn uses_lua() -> bool {
+    std::env::var("HOME").map(|h| std::path::Path::new(&h).join(".config/hypr/hyprland.lua").exists()).unwrap_or(false)
+}
+
+fn eval_lua(script: &str) {
+    let _ = Command::new("hyprctl").args(["eval", script]).spawn();
+}
+
+/// "decoration:blur:size" + 8 → `hl.config({ decoration = { blur = { size = 8 } } })`.
+fn lua_config(key: &str, value: &str) -> String {
+    let lit = if value == "true" || value == "false" || value.parse::<f64>().is_ok() {
+        value.to_string()
+    } else {
+        crate::backend::config::lua_str(value)
+    };
+    let nested = key.split([':', '.']).rev().fold(lit, |inner, part| format!("{{ {} = {} }}", part, inner));
+    format!("hl.config({})", nested)
+}
+
+/// Zet één Hyprland-optie live (keyword voor hyprlang, eval voor Lua-configs).
 pub fn set_keyword(key: &str, value: impl std::fmt::Display) {
-    let _ = Command::new("hyprctl").args(["keyword", key, &value.to_string()]).spawn();
+    let value = value.to_string();
+    if uses_lua() {
+        eval_lua(&lua_config(key, &value));
+    } else {
+        let _ = Command::new("hyprctl").args(["keyword", key, &value]).spawn();
+    }
+}
+
+/// Leest de actuele waarden uit Hyprland (voor Lua-gebruikers zonder zenith.lua).
+pub fn import_live(cfg: &mut crate::backend::config::ZenithConfig) {
+    let get = |opt: &str| -> Option<serde_json::Value> {
+        let out = Command::new("hyprctl").args(["getoption", opt, "-j"]).output().ok()?;
+        serde_json::from_slice(&out.stdout).ok()
+    };
+    let int = |opt: &str| get(opt).and_then(|v| v.get("int").and_then(|n| n.as_i64())
+        .or_else(|| v.get("css").and_then(|c| c.as_str()?.split_whitespace().next()?.parse().ok()))).map(|n| n as i32);
+    let float = |opt: &str| get(opt).and_then(|v| v.get("float")?.as_f64());
+    let boolean = |opt: &str| get(opt).and_then(|v| v.get("bool")?.as_bool().or_else(|| v.get("int")?.as_i64().map(|n| n != 0)));
+    let color = |opt: &str| get(opt).and_then(|v| gradient_to_hex(v.get("gradient")?.as_str()?));
+
+    if let Some(v) = int("general:gaps_out") { cfg.gaps_out = v; }
+    if let Some(v) = int("general:gaps_in") { cfg.gaps_in = v; }
+    if let Some(v) = int("general:border_size") { cfg.border_size = v; }
+    if let Some(v) = int("decoration:rounding") { cfg.rounding = v; }
+    if let Some(v) = float("decoration:active_opacity") { cfg.active_opacity = v; }
+    if let Some(v) = float("decoration:inactive_opacity") { cfg.inactive_opacity = v; }
+    if let Some(v) = boolean("decoration:dim_inactive") { cfg.dim_inactive = v; }
+    if let Some(v) = boolean("decoration:blur:enabled") { cfg.blur_enabled = v; }
+    if let Some(v) = int("decoration:blur:size") { cfg.blur_size = v; }
+    if let Some(v) = int("decoration:blur:passes") { cfg.blur_passes = v; }
+    if let Some(v) = boolean("decoration:shadow:enabled") { cfg.shadow_enabled = v; }
+    if let Some(v) = boolean("animations:enabled") { cfg.animations_enabled = v; }
+    cfg.anim_style = "own".to_string(); // eigen curves/animaties van de gebruiker niet overschrijven
+    if let Some(v) = get("general:layout").and_then(|v| v.get("str")?.as_str().map(String::from)) { cfg.layout = v; }
+    if let Some(v) = color("general:col.active_border") { cfg.active_border_color = v; }
+    if let Some(v) = color("general:col.inactive_border") { cfg.inactive_border_color = v; }
+}
+
+/// "ee33ccff 0deg" (aarrggbb) → "33ccff".
+fn gradient_to_hex(g: &str) -> Option<String> {
+    let first = g.split_whitespace().next()?;
+    (first.len() == 8 && first.chars().all(|c| c.is_ascii_hexdigit())).then(|| first[2..].to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lua_config_nests_keys_and_quotes_strings() {
+        assert_eq!(lua_config("decoration:blur:size", "8"), "hl.config({ decoration = { blur = { size = 8 } } })");
+        assert_eq!(lua_config("general:col.active_border", "rgb(33ccff)"), "hl.config({ general = { col = { active_border = \"rgb(33ccff)\" } } })");
+        assert_eq!(lua_config("decoration:dim_inactive", "true"), "hl.config({ decoration = { dim_inactive = true } })");
+        assert_eq!(lua_config("input:kb_layout", "us\"x"), "hl.config({ input = { kb_layout = \"us\\\"x\" } })");
+    }
+
+    #[test]
+    fn gradient_to_hex_parses_hyprland_colors() {
+        assert_eq!(gradient_to_hex("ee33ccff 0deg").as_deref(), Some("33ccff"));
+        assert_eq!(gradient_to_hex("ffffffff 0deg").as_deref(), Some("ffffff"));
+        assert_eq!(gradient_to_hex("bogus"), None);
+    }
+}
+
+/// Past alleen de animaties live toe (stijl- of snelheidswijziging).
+pub fn apply_animations(cfg: &crate::backend::config::ZenithConfig) {
+    if uses_lua() {
+        return eval_lua(&crate::backend::config::lua_script(cfg));
+    }
+    let mut batch = vec![format!("keyword animations:enabled {}", cfg.animations_enabled)];
+    if cfg.animations_enabled {
+        batch.extend(crate::backend::config::animation_lines(cfg).iter().map(|l| format!("keyword {}", l.replacen(" = ", " ", 1))));
+    }
+    let _ = Command::new("hyprctl").args(["--batch", &batch.join(" ; ")]).spawn();
 }
 
 /// Past alle Hyprland-velden uit de config in één keer live toe (presets).
 pub fn apply_all(cfg: &crate::backend::config::ZenithConfig) {
+    if uses_lua() {
+        return eval_lua(&crate::backend::config::lua_script(cfg));
+    }
     let mut batch = vec![
         format!("keyword general:gaps_out {}", cfg.gaps_out),
         format!("keyword general:gaps_in {}", cfg.gaps_in),
@@ -25,6 +121,9 @@ pub fn apply_all(cfg: &crate::backend::config::ZenithConfig) {
         format!("keyword decoration:shadow:enabled {}", cfg.shadow_enabled),
         format!("keyword animations:enabled {}", cfg.animations_enabled),
     ];
+    if cfg.animations_enabled {
+        batch.extend(crate::backend::config::animation_lines(cfg).iter().map(|l| format!("keyword {}", l.replacen(" = ", " ", 1))));
+    }
     if !cfg.kb_layout.is_empty() {
         batch.push(format!("keyword input:kb_layout {}", cfg.kb_layout));
     }

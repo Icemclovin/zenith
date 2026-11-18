@@ -915,11 +915,64 @@ fn build_window_content(
         c.shadow_enabled = on;
         hyprland::set_keyword("decoration:shadow:enabled", on);
     }));
-    group_fx.add(&switch_row(&tr.hypr_animations, &tr.hypr_animations_sub, initial_cfg.animations_enabled, state, |c, on| {
-        c.animations_enabled = on;
-        hyprland::set_keyword("animations:enabled", on);
-    }));
     page_hypr.add(&group_fx);
+
+    // Animaties: stijl (één klik) + tempo; "Uit" schakelt Hyprland-animaties volledig uit.
+    let group_anim = PreferencesGroup::builder().title(&tr.hypr_animations).description(&tr.hypr_anim_desc).build();
+    // FlowBox: knoppen lopen door naar een volgende regel in plaats van de pagina te verbreden.
+    let anim_box = gtk4::FlowBox::builder()
+        .selection_mode(gtk4::SelectionMode::None)
+        .homogeneous(true)
+        .min_children_per_line(3)
+        .max_children_per_line(6)
+        .column_spacing(8)
+        .row_spacing(8)
+        .build();
+    let anim_choices = [
+        ("smooth", &tr.anim_smooth), ("snappy", &tr.anim_snappy), ("bouncy", &tr.anim_bouncy),
+        ("slide", &tr.anim_slide), ("own", &tr.anim_own), ("off", &tr.anim_off),
+    ];
+    let current_anim = if initial_cfg.animations_enabled { initial_cfg.anim_style.as_str() } else { "off" };
+    let mut first: Option<gtk4::ToggleButton> = None;
+    for (id, label) in anim_choices {
+        let btn = gtk4::ToggleButton::builder().label(label.as_str()).css_classes(["zenith-preset"]).active(id == current_anim).build();
+        if let Some(f) = &first {
+            btn.set_group(Some(f));
+        } else {
+            first = Some(btn.clone());
+        }
+        let st = Rc::clone(state);
+        btn.connect_toggled(move |b| {
+            if !b.is_active() {
+                return;
+            }
+            let mut c = st.borrow_mut();
+            c.animations_enabled = id != "off";
+            if id != "off" {
+                c.anim_style = id.to_string();
+            }
+            hyprland::apply_animations(&c);
+            config::save_config(&c);
+        });
+        anim_box.insert(&btn, -1);
+    }
+    group_anim.add(&anim_box);
+    let speed_row = slider_row(&tr.anim_speed, 0.5, 2.0, 0.1, initial_cfg.anim_speed, |v| format!("{:.1}×", v), state, |c, v| {
+        c.anim_speed = v;
+        hyprland::apply_animations(c);
+    });
+    let speed_list = gtk4::ListBox::builder().selection_mode(gtk4::SelectionMode::None).css_classes(["boxed-list"]).margin_top(12).build();
+    speed_list.append(&speed_row);
+    group_anim.add(&speed_list);
+    group_anim.add(&Label::builder()
+        .label(tr.anim_own_hint.as_str())
+        .halign(gtk4::Align::Start)
+        .wrap(true)
+        .xalign(0.0)
+        .margin_top(6)
+        .css_classes(["zenith-dim", "caption"])
+        .build());
+    page_hypr.add(&group_anim);
 
     // Invoer: leeg laten = Zenith blijft van de toetsenbordindeling in hyprland.conf af.
     let group_input = PreferencesGroup::builder().title(&tr.hypr_input).build();

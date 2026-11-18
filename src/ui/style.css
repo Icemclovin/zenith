@@ -181,3 +181,9 @@ scale {
     border-radius: 9999px;
     border: 1px solid alpha(var(--window-fg-color), 0.25);
 }
+
+.zenith-preset:checked {
+    background-color: alpha(var(--accent-color), 0.18);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}

@@ -272,6 +272,19 @@ Scope {
     readonly property bool isIslands: root.layout.bar_style === "islands"
     readonly property int moduleSpacing: root.styling.module_spacing !== undefined ? root.styling.module_spacing : 8
 
+    // Animaties (ingesteld in Zenith → Statusbalk → Animaties)
+    readonly property var animCfg: root.shellConfig.animations || {}
+    readonly property int animMs: root.animCfg.duration_ms !== undefined ? root.animCfg.duration_ms : 250
+    readonly property int animEasing: {
+        var t = Easing[root.animCfg.curve || "OutCubic"];
+        return t !== undefined ? t : Easing.OutCubic;
+    }
+    readonly property bool hoverZoom: root.animCfg.hover_zoom !== undefined ? root.animCfg.hover_zoom : true
+    readonly property bool fadeIn: root.animCfg.fade_in !== undefined ? root.animCfg.fade_in : true
+
+    component Anim: NumberAnimation { duration: root.animMs; easing.type: root.animEasing }
+    component CAnim: ColorAnimation { duration: root.animMs; easing.type: root.animEasing }
+
     // Positie (top, bottom, left, right)
     anchors {
         top: root.layout.position !== "bottom"
@@ -304,12 +317,21 @@ Scope {
             : Qt.alpha(root.styling.background || "#1e1e2e", root.styling.opacity !== undefined ? root.styling.opacity : 0.90)
         border.width: root.styling.border_width !== undefined ? root.styling.border_width : 1
         border.color: root.styling.border_color || "#45475a"
+        Behavior on color { CAnim {} }
+        Behavior on border.color { CAnim {} }
+        Behavior on radius { Anim {} }
     }
 
     // Helper component voor het dynamisch inladen van modules (standaard of script)
     component ModuleLoader: Loader {
         id: mLoader
         required property var modelData
+
+        HoverHandler { id: modHover }
+        scale: root.hoverZoom && modHover.hovered ? 1.08 : 1.0
+        opacity: (status === Loader.Ready || !root.fadeIn) ? 1.0 : 0.0
+        Behavior on scale { Anim {} }
+        Behavior on opacity { Anim {} }
 
         source: {
             if (typeof modelData === "string" && modelData.indexOf("script:") === 0) {
@@ -350,6 +372,9 @@ Scope {
             border.width: root.isIslands ? (root.styling.border_width !== undefined ? root.styling.border_width : 1) : 0
             border.color: root.styling.border_color || "#45475a"
             implicitWidth: leftLayout.implicitWidth + (root.isIslands ? 20 : 0)
+            Behavior on color { CAnim {} }
+            Behavior on radius { Anim {} }
+            Behavior on implicitWidth { Anim {} }
 
             RowLayout {
                 id: leftLayout
@@ -373,6 +398,9 @@ Scope {
             border.width: root.isIslands ? (root.styling.border_width !== undefined ? root.styling.border_width : 1) : 0
             border.color: root.styling.border_color || "#45475a"
             implicitWidth: midLayout.implicitWidth + (root.isIslands ? 24 : 0)
+            Behavior on color { CAnim {} }
+            Behavior on radius { Anim {} }
+            Behavior on implicitWidth { Anim {} }
 
             RowLayout {
                 id: midLayout
@@ -396,6 +424,9 @@ Scope {
             border.width: root.isIslands ? (root.styling.border_width !== undefined ? root.styling.border_width : 1) : 0
             border.color: root.styling.border_color || "#45475a"
             implicitWidth: rightLayout.implicitWidth + (root.isIslands ? 16 : 0)
+            Behavior on color { CAnim {} }
+            Behavior on radius { Anim {} }
+            Behavior on implicitWidth { Anim {} }
 
             RowLayout {
                 id: rightLayout
@@ -425,6 +456,9 @@ Scope {
             border.width: root.isIslands ? (root.styling.border_width !== undefined ? root.styling.border_width : 1) : 0
             border.color: root.styling.border_color || "#45475a"
             implicitHeight: topLayout.implicitHeight + (root.isIslands ? 20 : 0)
+            Behavior on color { CAnim {} }
+            Behavior on radius { Anim {} }
+            Behavior on implicitHeight { Anim {} }
 
             ColumnLayout {
                 id: topLayout
@@ -448,6 +482,9 @@ Scope {
             border.width: root.isIslands ? (root.styling.border_width !== undefined ? root.styling.border_width : 1) : 0
             border.color: root.styling.border_color || "#45475a"
             implicitHeight: vMidLayout.implicitHeight + (root.isIslands ? 24 : 0)
+            Behavior on color { CAnim {} }
+            Behavior on radius { Anim {} }
+            Behavior on implicitHeight { Anim {} }
 
             ColumnLayout {
                 id: vMidLayout
@@ -471,6 +508,9 @@ Scope {
             border.width: root.isIslands ? (root.styling.border_width !== undefined ? root.styling.border_width : 1) : 0
             border.color: root.styling.border_color || "#45475a"
             implicitHeight: bottomLayout.implicitHeight + (root.isIslands ? 16 : 0)
+            Behavior on color { CAnim {} }
+            Behavior on radius { Anim {} }
+            Behavior on implicitHeight { Anim {} }
 
             ColumnLayout {
                 id: bottomLayout
@@ -504,10 +544,13 @@ Scope {
     if shell_qml.exists() {
         if let Ok(content) = read_to_string(&shell_qml) {
             // Als het bestaande bestand verouderd is (mist ModuleLoader, FileView, Scope of Panels)
-            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") {
-                let backup = qs_dir.join("shell.qml.old");
-                let _ = std::fs::copy(&shell_qml, &backup);
-                let _ = std::fs::write(&shell_qml, modular_shell_qml);
+            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") {
+                // Eigen aanpassingen nooit kwijtraken: unieke back-up, en alleen overschrijven als die gelukt is.
+                let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+                let backup = qs_dir.join(format!("shell.qml.bak-{}", stamp));
+                if std::fs::copy(&shell_qml, &backup).is_ok() {
+                    let _ = std::fs::write(&shell_qml, modular_shell_qml);
+                }
             }
         }
     } else {
@@ -2918,6 +2961,22 @@ fn ensure_hyprland_source(home: &Path) {
         if !content.contains("org.zenith.control") {
             let initial_cfg = crate::backend::config::load_config();
             crate::backend::config::save_config(&initial_cfg);
+        }
+    }
+
+    // Hyprland >= 0.55 met Lua-config: zenith.lua laden via pcall, zodat een fout erin
+    // nooit de rest van de gebruikersconfig breekt.
+    let hypr_lua = hypr_dir.join("hyprland.lua");
+    if hypr_lua.exists() {
+        if !hypr_dir.join("zenith.lua").exists() {
+            crate::backend::config::save_config(&crate::backend::config::load_config());
+        }
+        if let Ok(content) = read_to_string(&hypr_lua) {
+            if !content.contains("zenith.lua") {
+                if let Ok(mut file) = OpenOptions::new().append(true).open(&hypr_lua) {
+                    let _ = writeln!(file, "\n-- Injected by Zenith Control\npcall(dofile, os.getenv(\"HOME\") .. \"/.config/hypr/zenith.lua\")");
+                }
+            }
         }
     }
 

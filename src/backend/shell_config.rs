@@ -52,6 +52,26 @@ impl Default for ShellStyling {
     }
 }
 
+/// Animaties van de Quickshell-balk (gelezen door shell.qml).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
+pub struct ShellAnimations {
+    /// Duur van overgangen in ms (0 = uit).
+    pub duration_ms: i32,
+    /// Naam van een QML `Easing`-type, bv. "OutCubic" of "OutBack".
+    pub curve: String,
+    /// Modules zoomen licht in bij hover.
+    pub hover_zoom: bool,
+    /// Modules faden in bij laden.
+    pub fade_in: bool,
+}
+
+impl Default for ShellAnimations {
+    fn default() -> Self {
+        Self { duration_ms: 250, curve: "OutCubic".to_string(), hover_zoom: true, fade_in: true }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ShellLayout {
     pub position: String,
@@ -449,6 +469,8 @@ pub struct ZenithShellConfig {
     /// power users); bij `false` blijft de UI gericht op de kern-onderdelen.
     #[serde(default)]
     pub advanced_mode: bool,
+    #[serde(default)]
+    pub animations: ShellAnimations,
 }
 
 impl Default for ZenithShellConfig {
@@ -468,6 +490,7 @@ impl Default for ZenithShellConfig {
             custom_icons: CustomIcons::default(),
             lockscreen: LockscreenConfig::default(),
             advanced_mode: false,
+            animations: ShellAnimations::default(),
         }
     }
 }
@@ -1048,6 +1071,17 @@ mod tests {
         std::fs::write(home.join(".config/zenith/bar-styles.json"), "{kapot").unwrap();
         assert!(load_user_styles().is_empty());
         std::env::remove_var("HOME");
+    }
+
+    #[test]
+    fn old_config_without_animations_gets_defaults() {
+        let mut v = serde_json::to_value(ZenithShellConfig::default()).unwrap();
+        v.as_object_mut().unwrap().remove("animations");
+        let cfg: ZenithShellConfig = serde_json::from_value(v).unwrap();
+        assert_eq!(cfg.animations, ShellAnimations::default());
+        // Gedeeltelijk blok: ontbrekende velden krijgen ook hun standaard.
+        let part: ShellAnimations = serde_json::from_str(r#"{"duration_ms": 0}"#).unwrap();
+        assert_eq!((part.duration_ms, part.curve.as_str(), part.hover_zoom), (0, "OutCubic", true));
     }
 
     #[test]
