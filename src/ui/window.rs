@@ -199,7 +199,7 @@ fn build_window_content(
         let on = format!("● {}", tr.status_active);
         let off = format!("○ {}", tr.status_inactive);
         move |pill: &Label| {
-            if process::is_process_running("quickshell") {
+            if process::zenith_bar_running() {
                 pill.set_label(&on);
                 pill.set_css_classes(&["status-pill-active"]);
             } else {

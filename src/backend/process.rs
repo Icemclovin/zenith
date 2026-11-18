@@ -117,8 +117,12 @@ pub fn set_active_bar(choice: &str) {
         .args(["-q", "-9", "waybar"])
         .status();
 
-    let _ = Command::new("killall")
-        .args(["-q", "-9", "quickshell"])
+    // Alleen Zenith's eigen Quickshell-instantie: andere shells (bv. serpantinum) draaien
+    // óók als proces "quickshell" en mogen nooit mee gestopt worden.
+    let _ = Command::new("quickshell")
+        .args(["kill", "-p", &zenith_shell_qml()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status();
 
     // 2. Start de geselecteerde statusbalk volledig ontkoppeld op
@@ -132,7 +136,7 @@ pub fn set_active_bar(choice: &str) {
         }
         "quickshell" => {
             let _ = Command::new("quickshell")
-                .arg("-d")
+                .args(["-d", "-p", &zenith_shell_qml()])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -227,15 +231,18 @@ pub fn is_command_available(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Controleert of een procesnaam actief draait via pgrep
-pub fn is_process_running(proc_name: &str) -> bool {
-    Command::new("pgrep")
-        .arg("-x")
-        .arg(proc_name)
-        .stdout(Stdio::null())
+/// Pad van Zenith's eigen Quickshell-config.
+pub fn zenith_shell_qml() -> String {
+    format!("{}/.config/quickshell/shell.qml", std::env::var("HOME").unwrap_or_default())
+}
+
+/// Draait Zenith's eigen balk? (Niet `pgrep quickshell`: dat telt ook andere shells mee.)
+pub fn zenith_bar_running() -> bool {
+    Command::new("quickshell")
+        .args(["list", "-p", &zenith_shell_qml()])
         .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("Process ID"))
         .unwrap_or(false)
 }
 
