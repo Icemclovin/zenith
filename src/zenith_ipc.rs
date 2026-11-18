@@ -5,7 +5,6 @@ use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::process::Command;
 
 // zenithd — JSON-RPC 2.0 IPC-server voor ZenithOS.
 //
@@ -87,10 +86,9 @@ fn send_json(conn: &mut UnixStream, body: Value) {
     }
 }
 
-/// Stuur een SIGUSR1 naar Quickshell zodat de statusbalk live opnieuw tekent
-/// (zie specificatie §5 "Drag-and-Drop Canvas").
+/// Quickshell hertekent vanzelf: de QML leest de config via `FileView { watchChanges: true }`.
+/// Geen SIGUSR1 sturen: Quickshell vangt dat niet af en wordt er door beëindigd.
 fn quickshell_reload() -> Value {
-    let _ = Command::new("pkill").args(["-USR1", "quickshell"]).spawn();
     Value::Bool(true)
 }
 
@@ -219,7 +217,7 @@ fn write_text_atomic(path: &PathBuf, content: &str) -> Result<(), String> {
 //
 // Verplaats een statusbalkmodule naar een andere uitlijning (left/center/right)
 // en een nieuwe index, schrijf de quickshell-config atomair weg en stuur
-// vervolgens SIGUSR1 naar Quickshell voor een live redraw.
+// Quickshell pikt de wijziging zelf op via FileView watchChanges.
 
 /// Pad naar het door Zenith beheerde quickshell-schelsysteembestand.
 fn quickshell_json_path() -> Option<PathBuf> {
@@ -239,7 +237,7 @@ fn param_i64(params: &Option<Value>, key: &str) -> Option<i64> {
 }
 
 /// update_module_position — verplaats een module naar slot+index, atomair wegschrijven,
-/// en laat Quickshell live hertekenen (SIGUSR1).
+/// Quickshell hertekent zelf via FileView watchChanges.
 fn update_module_position(params: Option<Value>) -> (Option<Value>, Option<(i32, String)>) {
     let module_id = param_str(&params, "module_id");
     let alignment = param_str(&params, "alignment");

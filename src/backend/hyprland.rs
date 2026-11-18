@@ -1,51 +1,34 @@
 use serde::Deserialize;
 use std::process::Command;
 
-pub fn set_gaps_out(val: i32) {
-    let _ = Command::new("hyprctl").args(["keyword", "general:gaps_out", &val.to_string()]).spawn();
+/// Zet één Hyprland-optie live via `hyprctl keyword`.
+pub fn set_keyword(key: &str, value: impl std::fmt::Display) {
+    let _ = Command::new("hyprctl").args(["keyword", key, &value.to_string()]).spawn();
 }
 
-pub fn set_gaps_in(val: i32) {
-    let _ = Command::new("hyprctl").args(["keyword", "general:gaps_in", &val.to_string()]).spawn();
-}
-
-pub fn set_border_size(val: i32) {
-    let _ = Command::new("hyprctl").args(["keyword", "general:border_size", &val.to_string()]).spawn();
-}
-
-pub fn set_rounding(val: i32) {
-    let _ = Command::new("hyprctl").args(["keyword", "decoration:rounding", &val.to_string()]).spawn();
-}
-
-pub fn set_active_border_color(hex: &str) {
-    let _ = Command::new("hyprctl").args(["keyword", "general:col.active_border", &format!("rgb({})", hex)]).spawn();
-}
-
-pub fn set_active_opacity(val: f64) {
-    let _ = Command::new("hyprctl").args(["keyword", "decoration:active_opacity", &format!("{:.2}", val)]).spawn();
-}
-
-pub fn set_inactive_opacity(val: f64) {
-    let _ = Command::new("hyprctl").args(["keyword", "decoration:inactive_opacity", &format!("{:.2}", val)]).spawn();
-}
-
-pub fn set_blur_enabled(enabled: bool) {
-    let state = if enabled { "true" } else { "false" };
-    let _ = Command::new("hyprctl").args(["keyword", "decoration:blur:enabled", state]).spawn();
-}
-
-pub fn set_blur_size(val: i32) {
-    let _ = Command::new("hyprctl").args(["keyword", "decoration:blur:size", &val.to_string()]).spawn();
-}
-
-pub fn set_shadow_enabled(enabled: bool) {
-    let state = if enabled { "true" } else { "false" };
-    let _ = Command::new("hyprctl").args(["keyword", "decoration:shadow:enabled", state]).spawn();
-}
-
-pub fn set_animations_enabled(enabled: bool) {
-    let state = if enabled { "true" } else { "false" };
-    let _ = Command::new("hyprctl").args(["keyword", "animations:enabled", state]).spawn();
+/// Past alle Hyprland-velden uit de config in één keer live toe (presets).
+pub fn apply_all(cfg: &crate::backend::config::ZenithConfig) {
+    let mut batch = vec![
+        format!("keyword general:gaps_out {}", cfg.gaps_out),
+        format!("keyword general:gaps_in {}", cfg.gaps_in),
+        format!("keyword general:border_size {}", cfg.border_size),
+        format!("keyword general:col.active_border rgb({})", cfg.active_border_color),
+        format!("keyword general:col.inactive_border rgb({})", cfg.inactive_border_color),
+        format!("keyword general:layout {}", cfg.layout),
+        format!("keyword decoration:rounding {}", cfg.rounding),
+        format!("keyword decoration:active_opacity {:.2}", cfg.active_opacity),
+        format!("keyword decoration:inactive_opacity {:.2}", cfg.inactive_opacity),
+        format!("keyword decoration:dim_inactive {}", cfg.dim_inactive),
+        format!("keyword decoration:blur:enabled {}", cfg.blur_enabled),
+        format!("keyword decoration:blur:size {}", cfg.blur_size),
+        format!("keyword decoration:blur:passes {}", cfg.blur_passes),
+        format!("keyword decoration:shadow:enabled {}", cfg.shadow_enabled),
+        format!("keyword animations:enabled {}", cfg.animations_enabled),
+    ];
+    if !cfg.kb_layout.is_empty() {
+        batch.push(format!("keyword input:kb_layout {}", cfg.kb_layout));
+    }
+    let _ = Command::new("hyprctl").args(["--batch", &batch.join(" ; ")]).spawn();
 }
 
 pub fn set_wallpaper(path: &str) {

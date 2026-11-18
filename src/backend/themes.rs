@@ -194,11 +194,6 @@ pub fn update_quickshell(cfg: &crate::backend::config::ZenithConfig) {
             .args(["-p", &shell_qml.to_string_lossy(), "ipc", "call", "topbar", "forceReload"])
             .spawn();
     }
-
-    // Signaleer Quickshell om het themabestand opnieuw te laden
-    let _ = std::process::Command::new("pkill")
-        .args(["-SIGUSR1", "quickshell"])
-        .spawn();
 }
 
 /// Slaat ZenithShellConfig direct op en synchroniseert ook het legacy zenith-theme.json
@@ -249,8 +244,4 @@ pub fn sync_shell_config(shell_cfg: &crate::backend::shell_config::ZenithShellCo
     let tmp = dir.join("zenith-theme.json.tmp");
     let _ = std::fs::write(&tmp, &json);
     let _ = std::fs::rename(&tmp, dir.join("zenith-theme.json"));
-
-    let _ = std::process::Command::new("pkill")
-        .args(["-SIGUSR1", "quickshell"])
-        .spawn();
 }

@@ -15,6 +15,12 @@ pub struct ZenithConfig {
     pub blur_size: i32,
     pub shadow_enabled: bool,
     pub animations_enabled: bool,
+    pub inactive_border_color: String,
+    pub layout: String,
+    pub blur_passes: i32,
+    pub dim_inactive: bool,
+    /// Leeg = Zenith laat de toetsenbordindeling van hyprland.conf ongemoeid.
+    pub kb_layout: String,
     // Waybar
     pub waybar_position: String,
     pub waybar_height: i32,
@@ -89,6 +95,11 @@ impl Default for ZenithConfig {
             blur_size: 6,
             shadow_enabled: true,
             animations_enabled: true,
+            inactive_border_color: "595959".to_string(),
+            layout: "dwindle".to_string(),
+            blur_passes: 1,
+            dim_inactive: false,
+            kb_layout: String::new(),
             waybar_position: "top".to_string(),
             waybar_height: 32,
             waybar_bg_color: "1e1e2e".to_string(),
@@ -173,6 +184,11 @@ pub fn load_config() -> ZenithConfig {
             else if let Some(v) = parse_i32(l, "$zenith_blur_size = ") { cfg.blur_size = v; }
             else if let Some(v) = parse_bool(l, "$zenith_shadow_enabled = ") { cfg.shadow_enabled = v; }
             else if let Some(v) = parse_bool(l, "$zenith_animations_enabled = ") { cfg.animations_enabled = v; }
+            else if let Some(v) = parse_str(l, "$zenith_inactive_border_color = ") { cfg.inactive_border_color = v; }
+            else if let Some(v) = parse_str(l, "$zenith_layout = ") { cfg.layout = v; }
+            else if let Some(v) = parse_i32(l, "$zenith_blur_passes = ") { cfg.blur_passes = v; }
+            else if let Some(v) = parse_bool(l, "$zenith_dim_inactive = ") { cfg.dim_inactive = v; }
+            else if let Some(v) = parse_str(l, "kb_layout = ") { cfg.kb_layout = v; }
             else if let Some(v) = parse_str(l, "$zenith_wb_pos = ") { cfg.waybar_position = v; }
             else if let Some(v) = parse_i32(l, "$zenith_wb_height = ") { cfg.waybar_height = v; }
             else if let Some(v) = parse_str(l, "$zenith_wb_bg = ") { cfg.waybar_bg_color = v; }
@@ -244,6 +260,24 @@ pub fn load_config() -> ZenithConfig {
     cfg
 }
 
+/// Hyprland-presets voor wie niet aan elke schuif wil zitten. Kleuren, layout en
+/// toetsenbord blijven staan: dat is smaak, geen preset.
+pub const PRESETS: [&str; 4] = ["default", "minimal", "performance", "eyecandy"];
+
+pub fn apply_preset(cfg: &mut ZenithConfig, preset: &str) {
+    let d = ZenithConfig::default();
+    // (gaps_out, gaps_in, border, rounding, active_op, inactive_op, blur, blur_size, passes, shadow, anim, dim)
+    let p = match preset {
+        "minimal" => (4, 2, 1, 4, 1.0, 1.0, false, d.blur_size, 1, false, true, false),
+        "performance" => (2, 1, 1, 0, 1.0, 1.0, false, d.blur_size, 1, false, false, false),
+        "eyecandy" => (14, 7, 2, 14, 0.95, 0.85, true, 8, 3, true, true, false),
+        _ => (d.gaps_out, d.gaps_in, d.border_size, d.rounding, d.active_opacity, d.inactive_opacity,
+              d.blur_enabled, d.blur_size, d.blur_passes, d.shadow_enabled, d.animations_enabled, d.dim_inactive),
+    };
+    (cfg.gaps_out, cfg.gaps_in, cfg.border_size, cfg.rounding, cfg.active_opacity, cfg.inactive_opacity,
+     cfg.blur_enabled, cfg.blur_size, cfg.blur_passes, cfg.shadow_enabled, cfg.animations_enabled, cfg.dim_inactive) = p;
+}
+
 /// Vervangt (of voegt toe) de monitor-regel voor de monitor waar `rule` mee begint.
 pub fn upsert_monitor_rule(cfg: &mut ZenithConfig, rule: String) {
     let name = rule.split(',').next().unwrap_or("").trim().to_string();
@@ -290,6 +324,10 @@ pub fn save_config(cfg: &ZenithConfig) {
                 $zenith_blur_size = {}\n\
                 $zenith_shadow_enabled = {}\n\
                 $zenith_animations_enabled = {}\n\
+                $zenith_inactive_border_color = {}\n\
+                $zenith_layout = {}\n\
+                $zenith_blur_passes = {}\n\
+                $zenith_dim_inactive = {}\n\
                 $zenith_wb_pos = {}\n\
                 $zenith_wb_height = {}\n\
                 $zenith_wb_bg = {}\n\
@@ -354,26 +392,32 @@ pub fn save_config(cfg: &ZenithConfig) {
                     gaps_in = $zenith_gaps_in\n\
                     border_size = $zenith_border_size\n\
                     col.active_border = rgb($zenith_active_border_color)\n\
+                    col.inactive_border = rgb($zenith_inactive_border_color)\n\
+                    layout = $zenith_layout\n\
                 }}\n\n\
                 decoration {{\n\
                     rounding = $zenith_rounding\n\
                     active_opacity = $zenith_active_opacity\n\
                     inactive_opacity = $zenith_inactive_opacity\n\
+                    dim_inactive = $zenith_dim_inactive\n\
                     shadow {{\n\
                         enabled = $zenith_shadow_enabled\n\
                     }}\n\
                     blur {{\n\
                         enabled = $zenith_blur_enabled\n\
                         size = $zenith_blur_size\n\
+                        passes = $zenith_blur_passes\n\
                     }}\n\
                 }}\n\n\
                 animations {{\n\
                     enabled = $zenith_animations_enabled\n\
-                }}\n",
+                }}\n\
+                {}",
                 monitor_lines,
                 cfg.gaps_out, cfg.gaps_in, cfg.border_size, cfg.rounding, cfg.active_border_color,
                 cfg.active_opacity, cfg.inactive_opacity, cfg.blur_enabled, cfg.blur_size,
                 cfg.shadow_enabled, cfg.animations_enabled,
+                cfg.inactive_border_color, cfg.layout, cfg.blur_passes, cfg.dim_inactive,
                 cfg.waybar_position, cfg.waybar_height, cfg.waybar_bg_color,
                 cfg.waybar_opacity, cfg.waybar_rounding,
                 cfg.active_bar, cfg.default_launcher, cfg.default_terminal, cfg.default_shell,
@@ -393,7 +437,8 @@ pub fn save_config(cfg: &ZenithConfig) {
                     "waybar" => "exec-once = waybar",
                     _ => "# Bar autostart uitgeschakeld",
                 },
-                cfg.default_terminal, launcher_cmd
+                cfg.default_terminal, launcher_cmd,
+                if cfg.kb_layout.is_empty() { String::new() } else { format!("\ninput {{\n    kb_layout = {}\n}}\n", cfg.kb_layout) }
             );
             if f.write_all(content.as_bytes()).is_ok() {
                 let _ = std::fs::rename(&tmp, &path);
@@ -404,6 +449,39 @@ pub fn save_config(cfg: &ZenithConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preset_roundtrips_through_zenith_conf() {
+        let _guard = crate::backend::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = std::path::PathBuf::from("/tmp/zenith-preset-test-home");
+        let _ = std::fs::remove_dir_all(&home);
+        std::env::set_var("HOME", &home);
+
+        let mut cfg = ZenithConfig::default();
+        apply_preset(&mut cfg, "eyecandy");
+        cfg.inactive_border_color = "112233".into();
+        cfg.layout = "master".into();
+        cfg.dim_inactive = true;
+        cfg.kb_layout = "be".into();
+        save_config(&cfg);
+        let back = load_config();
+        assert_eq!((back.gaps_out, back.rounding, back.blur_passes), (14, 14, 3));
+        assert_eq!(back.inactive_border_color, "112233");
+        assert_eq!(back.layout, "master");
+        assert!(back.dim_inactive);
+        assert_eq!(back.kb_layout, "be");
+
+        // Lege kb_layout schrijft geen input-blok (laat hyprland.conf ongemoeid).
+        cfg.kb_layout.clear();
+        save_config(&cfg);
+        let text = std::fs::read_to_string(home.join(".config/hypr/zenith.conf")).unwrap();
+        assert!(!text.contains("kb_layout"), "{text}");
+
+        apply_preset(&mut cfg, "default");
+        assert_eq!(cfg.gaps_out, ZenithConfig::default().gaps_out);
+        assert_eq!(cfg.layout, "master", "preset laat layout staan");
+        std::env::remove_var("HOME");
+    }
 
     #[test]
     fn upsert_monitor_rule_replaces_same_monitor() {

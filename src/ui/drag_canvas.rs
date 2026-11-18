@@ -4,8 +4,8 @@
 // kan modules over drie zones slepen — links, midden, rechts — door een module-
 // chip op te pakken en naar een andere zone te slepen. Bij loslaten wordt de
 // positie via JSON-RPC `update_module_position` naar zenithd gestuurd (live via
-// de socket), waarna de balk via SIGUSR1 hertekent. Wanneer de daemon niet
-// draait, vallen we terug op een lokale config-write + SIGUSR1.
+// de socket), waarna Quickshell zelf hertekent (FileView watchChanges). Wanneer de daemon niet
+// draait, vallen we terug op een lokale config-write.
 
 use gtk4::prelude::*;
 use gtk4::{Box, Button, DropTarget, DragSource, Orientation};
@@ -23,8 +23,8 @@ struct DragPayload {
 }
 
 /// Verplaats een module naar een zone (append aan het einde van de doelzone).
-/// - Daemon draait: laat zenithd de wijziging atomair wegschrijven + SIGUSR1.
-/// - Daemon uit: lokale mutatie + `sync_shell_config` (save + SIGUSR1).
+/// - Daemon draait: laat zenithd de wijziging atomair wegschrijven.
+/// - Daemon uit: lokale mutatie + `sync_shell_config` (atomaire save).
 fn apply_move(
     state: &Rc<RefCell<ZenithShellConfig>>,
     module_id: &str,

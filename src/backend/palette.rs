@@ -192,7 +192,7 @@ pub fn apply_palette(palette: &WallpaperPalette) {
 
     // 2. Update Hyprland live borderkleur
     let border_hex = palette.primary_accent.trim_start_matches('#');
-    crate::backend::hyprland::set_active_border_color(border_hex);
+    crate::backend::hyprland::set_keyword("general:col.active_border", format!("rgb({})", border_hex));
 
     // 3. Update en sla op in zenith.conf (Hyprland persistente configuratie)
     let mut hypr_cfg = crate::backend::config::load_config();

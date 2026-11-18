@@ -66,7 +66,7 @@ fn rpc_call_with_params(method: &str, params: Value) -> Option<Value> {
 }
 
 /// Verplaats een statusbalkmodule naar een andere uitlijning en index via de
-/// daemon (`update_module_position`), gevolgd door een SIGUSR1-redraw.
+/// daemon (`update_module_position`), Quickshell hertekent zelf (FileView watchChanges).
 /// Returnt `true` als de daemon de wijziging accepteerde.
 pub fn update_module_position(module_id: &str, new_index: i64, alignment: &str) -> bool {
     let mut params = serde_json::from_str::<Value>("{}").unwrap_or_default();

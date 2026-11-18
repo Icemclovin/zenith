@@ -162,3 +162,17 @@ scale {
     border-radius: 8px;
     padding: 4px 10px;
 }
+
+/* --- Presets (Hyprland) -------------------------------------------- */
+.zenith-preset {
+    padding: 14px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    background-color: var(--card-bg-color);
+    border: 1px solid alpha(var(--window-fg-color), 0.06);
+}
+
+.zenith-preset:hover {
+    background-color: alpha(var(--accent-color), 0.12);
+    border-color: alpha(var(--accent-color), 0.45);
+}
