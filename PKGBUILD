@@ -8,7 +8,7 @@
 _zenith_commit="52dd740f628e687e3ae1ab46ea2f1e27175991be"
 pkgname=zenith-control
 pkgver=0.1.0
-pkgrel=8
+pkgrel=9
 pkgdesc="Visual studio en controlecentrum voor Hyprland & Quickshell (zenith + zenithd JSON-RPC-daemon)"
 arch=('x86_64')
 url="https://github.com/Icemclovin/zenith"
@@ -53,6 +53,9 @@ package() {
     cd "$srcdir/zenith-${_zenith_commit}"
     install -Dm755 "target/release/zenith" "${pkgdir}/usr/bin/zenith"
     install -Dm755 "target/release/zenithd" "${pkgdir}/usr/bin/zenithd"
+
+    # Zenith testen met de toetsen van een andere shell (bv. serpantinum), zonder iets op te slaan
+    install -Dm755 "scripts/zenith-test-session" "${pkgdir}/usr/bin/zenith-test-session"
 
     # Private broker (polkit) voor de Tool Hub
     install -Dm755 "scripts/zenith-priv-broker" "${pkgdir}/usr/lib/zenith/zenith-priv-broker"
