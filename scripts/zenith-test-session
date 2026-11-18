@@ -46,12 +46,13 @@ rebind("SUPER + L", "hyprlock", media)
 
 -- Shell-acties → Zenith
 rebind("SUPER + R", "quickshell kill -p " .. CFG .. "; quickshell -d -p " .. CFG)
-rebind("SUPER + D", "rofi -show drun")
+rebind("SUPER + D", IPC .. "launcher toggle")
+rebind("SUPER + N", IPC .. "notifications toggle")
 rebind("SUPER + W", "zenith")
 rebind("SUPER + C", IPC .. "clipboard toggle")
 rebind("SUPER + S", IPC .. "calendar toggle")
 rebind("SUPER + M", IPC .. "media toggle")
-for _, k in ipairs({ "B", "N", "V" }) do
+for _, k in ipairs({ "B", "V" }) do
   rebind("SUPER + " .. k, IPC .. "controlCenter toggle")
 end
 for _, k in ipairs({ "H", "A" }) do
@@ -77,14 +78,16 @@ case "${1:-}" in
         # dit pad noemen (bv. een terminal of editor).
         pkill -f "^quickshell -p $HOME/.local/share/serpantinum/" 2>/dev/null || true
         quickshell kill -p "$QS_CFG" >/dev/null 2>&1 || true
+        # Er kan maar één meldingendienst zijn: een via DBus opgestarte swaync zou Zenith blokkeren.
+        pkill -x swaync 2>/dev/null || true
         setsid quickshell -d -p "$QS_CFG" >/dev/null 2>&1 < /dev/null
         hyprctl eval "$(lua_binds)" >/dev/null
-        notify-send "Zenith-testsessie" "serpantinum staat uit, Zenith is actief. Terug: zenith-test-session stop" || true
         echo "Zenith-testsessie actief. Terug naar serpantinum: zenith-test-session stop"
         ;;
     stop)
         quickshell kill -p "$QS_CFG" >/dev/null 2>&1 || true
         hyprctl reload >/dev/null # eigen binds terug; live evals vervallen
+        pkill -x swaync 2>/dev/null || true # serpantinum moet de meldingen weer kunnen overnemen
         [ -x "$SERPD" ] && { setsid "$SERPD" start >/dev/null 2>&1 < /dev/null & }
         echo "Terug naar serpantinum."
         ;;

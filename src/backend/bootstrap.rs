@@ -82,6 +82,23 @@ fn ensure_file_exists(path: &Path, default_content: &str) {
     }
 }
 
+/// Schrijft een Zenith-paneel, of werkt het bij als de inhoud afwijkt en het bestand van Zenith
+/// zelf is (markering, of een oudere versie die ZenithPopup gebruikt). Eigen bestanden van de
+/// gebruiker blijven ongemoeid; de vorige versie wordt altijd eerst als `.bak` bewaard.
+fn ensure_zenith_panel(path: &Path, content: &str) {
+    let Ok(current) = read_to_string(path) else {
+        return ensure_file_exists(path, content);
+    };
+    // Oudere Zenith-versies: de panelen gebruiken ZenithPopup, en ZenithPopup.qml zelf heeft deze kopregel.
+    let ours = current.contains("zenith-panel") || current.contains("ZenithPopup") || current.contains("Gedeeld pop-uppaneel van Zenith");
+    if current == content || !ours {
+        return;
+    }
+    if std::fs::copy(path, path.with_extension("qml.bak")).is_ok() {
+        let _ = std::fs::write(path, content);
+    }
+}
+
 fn ensure_quickshell_config(home: &Path) {
     let qs_dir = home.join(".config/quickshell");
     let modules_dir = qs_dir.join("modules");
@@ -546,12 +563,14 @@ Scope {
     Panels.Clipboard {}
     Panels.Calendar {}
     Panels.Media {}
+    Panels.Launcher {}
+    Panels.Notifications {}
 }
 "###;
     if shell_qml.exists() {
         if let Ok(content) = read_to_string(&shell_qml) {
             // Als het bestaande bestand verouderd is (mist ModuleLoader, FileView, Scope of Panels)
-            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") || !content.contains("Panels.Media") {
+            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") || !content.contains("Panels.Notifications") {
                 // Eigen aanpassingen nooit kwijtraken: unieke back-up, en alleen overschrijven als die gelukt is.
                 let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
                 let backup = qs_dir.join(format!("shell.qml.bak-{}", stamp));
@@ -1402,10 +1421,11 @@ Rectangle {
 
 
 fn ensure_panels(dir: &Path) {
-    // Pop-uppanelen (klembord, kalender, media) delen ZenithPopup.qml.
-    ensure_file_exists(
+    // Pop-uppanelen delen ZenithPopup.qml; ze worden bijgewerkt als Zenith een nieuwere versie heeft.
+    ensure_zenith_panel(
         &dir.join("ZenithPopup.qml"),
-        r###"import QtQuick
+        r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
+import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -1452,6 +1472,13 @@ Scope {
     readonly property var locale: Qt.locale(({ nl: "nl_NL", en: "en_GB", de: "de_DE", es: "es_ES" })[pop.lang] || "nl_NL")
     readonly property var dict: {
         "nl": {
+            "apps": "Apps",
+            "searchapps": "Zoek een app…",
+            "noapps": "Geen apps gevonden",
+            "launchhint": "↑↓ kiezen · Enter openen · Esc sluiten",
+            "notifications": "Meldingen",
+            "nonotif": "Geen meldingen",
+            "dnd": "Niet storen",
             "clipboard": "Klembord",
             "search": "Zoek in klembord…",
             "empty": "Klembord is leeg",
@@ -1466,6 +1493,13 @@ Scope {
             "nothing": "Er speelt nu niets"
         },
         "en": {
+            "apps": "Apps",
+            "searchapps": "Search apps…",
+            "noapps": "No apps found",
+            "launchhint": "↑↓ select · Enter open · Esc close",
+            "notifications": "Notifications",
+            "nonotif": "No notifications",
+            "dnd": "Do not disturb",
             "clipboard": "Clipboard",
             "search": "Search clipboard…",
             "empty": "Clipboard is empty",
@@ -1480,6 +1514,13 @@ Scope {
             "nothing": "Nothing is playing"
         },
         "de": {
+            "apps": "Apps",
+            "searchapps": "App suchen…",
+            "noapps": "Keine Apps gefunden",
+            "launchhint": "↑↓ wählen · Enter öffnen · Esc schließen",
+            "notifications": "Benachrichtigungen",
+            "nonotif": "Keine Benachrichtigungen",
+            "dnd": "Nicht stören",
             "clipboard": "Zwischenablage",
             "search": "Zwischenablage durchsuchen…",
             "empty": "Zwischenablage ist leer",
@@ -1494,6 +1535,13 @@ Scope {
             "nothing": "Es wird nichts abgespielt"
         },
         "es": {
+            "apps": "Aplicaciones",
+            "searchapps": "Buscar aplicación…",
+            "noapps": "No se encontraron aplicaciones",
+            "launchhint": "↑↓ elegir · Enter abrir · Esc cerrar",
+            "notifications": "Notificaciones",
+            "nonotif": "Sin notificaciones",
+            "dnd": "No molestar",
             "clipboard": "Portapapeles",
             "search": "Buscar en el portapapeles…",
             "empty": "El portapapeles está vacío",
@@ -1619,9 +1667,10 @@ Scope {
 }
 "###,
     );
-    ensure_file_exists(
+    ensure_zenith_panel(
         &dir.join("Clipboard.qml"),
-        r###"import QtQuick
+        r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
+import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1874,9 +1923,10 @@ Scope {
 }
 "###,
     );
-    ensure_file_exists(
+    ensure_zenith_panel(
         &dir.join("Calendar.qml"),
-        r###"import QtQuick
+        r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
+import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -2070,9 +2120,10 @@ Scope {
 }
 "###,
     );
-    ensure_file_exists(
+    ensure_zenith_panel(
         &dir.join("Media.qml"),
-        r###"import QtQuick
+        r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
+import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -2305,6 +2356,524 @@ Scope {
                 text: popup.tr("nothing")
                 color: Qt.alpha(popup.fg, 0.6)
                 font.pixelSize: popup.fontSize + 2
+            }
+        }
+    }
+}
+"###,
+    );
+    ensure_zenith_panel(
+        &dir.join("Launcher.qml"),
+        r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+// App-launcher: zoek op naam, omschrijving of trefwoord; ↑/↓ + Enter of klik om te openen.
+Scope {
+    id: launcher
+
+    property string query: ""
+    readonly property var apps: DesktopEntries.applications.values
+    readonly property var results: {
+        var q = launcher.query.toLowerCase().trim();
+        var scored = [];
+        for (var i = 0; i < launcher.apps.length; i++) {
+            var a = launcher.apps[i];
+            if (a.noDisplay) continue;
+            var name = (a.name || "").toLowerCase();
+            var score = 0;
+            if (q.length === 0) score = 1;
+            else if (name.indexOf(q) === 0) score = 4;
+            else if (name.indexOf(q) !== -1) score = 3;
+            else if ((a.genericName || "").toLowerCase().indexOf(q) !== -1) score = 2;
+            else if ((a.keywords || []).join(" ").toLowerCase().indexOf(q) !== -1 || (a.comment || "").toLowerCase().indexOf(q) !== -1) score = 1;
+            if (score > 0) scored.push({ app: a, score: score, name: name });
+        }
+        scored.sort((x, y) => y.score - x.score || x.name.localeCompare(y.name));
+        return scored.slice(0, 60).map(s => s.app);
+    }
+
+    IpcHandler {
+        target: "launcher"
+        function toggle() { popup.active ? launcher.close() : launcher.open(); }
+        function open() { launcher.open(); }
+        function close() { launcher.close(); }
+    }
+
+    function open() {
+        search.text = "";
+        launcher.query = "";
+        list.currentIndex = 0;
+        popup.active = true;
+        search.forceActiveFocus();
+    }
+    function close() { popup.active = false; }
+    function launch(app) {
+        if (!app) return;
+        app.execute();
+        launcher.close();
+    }
+
+    ZenithPopup {
+        id: popup
+        title: popup.tr("apps")
+        icon: "🚀"
+        position: "top"
+        panelWidth: 540
+        panelHeight: 540
+        wantsKeyboard: true
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 44
+                radius: 14
+                color: Qt.alpha(popup.fg, 0.06)
+                border.width: search.activeFocus ? 1 : 0
+                border.color: popup.accent
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 14
+                    spacing: 10
+                    Text { text: "🔍"; font.pixelSize: popup.fontSize + 3 }
+                    TextInput {
+                        id: search
+                        Layout.fillWidth: true
+                        color: popup.fg
+                        font.pixelSize: popup.fontSize + 4
+                        clip: true
+                        onTextChanged: { launcher.query = text; list.currentIndex = 0; }
+                        Keys.onEscapePressed: launcher.close()
+                        Keys.onDownPressed: list.incrementCurrentIndex()
+                        Keys.onUpPressed: list.decrementCurrentIndex()
+                        Keys.onReturnPressed: launcher.launch(launcher.results[list.currentIndex])
+                        Text {
+                            visible: search.text.length === 0
+                            text: popup.tr("searchapps")
+                            color: Qt.alpha(popup.fg, 0.4)
+                            font.pixelSize: popup.fontSize + 4
+                        }
+                    }
+                }
+            }
+
+            ListView {
+                id: list
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 2
+                model: launcher.results
+                highlightMoveDuration: popup.ms
+
+                delegate: Rectangle {
+                    id: row
+                    required property var modelData
+                    required property int index
+                    width: list.width
+                    implicitHeight: 52
+                    radius: 12
+                    readonly property bool current: ListView.isCurrentItem
+                    color: current ? Qt.alpha(popup.accent, 0.18) : (hover.containsMouse ? Qt.alpha(popup.fg, 0.07) : "transparent")
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    opacity: 0
+                    Component.onCompleted: opacity = 1
+                    Behavior on opacity { NumberAnimation { duration: popup.ms } }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        spacing: 12
+                        Item {
+                            implicitWidth: 34
+                            implicitHeight: 34
+                            Image {
+                                id: appIcon
+                                anchors.fill: parent
+                                source: row.modelData.icon ? Quickshell.iconPath(row.modelData.icon, true) : ""
+                                sourceSize: Qt.size(64, 64)
+                                asynchronous: true
+                                scale: row.current ? 1.08 : 1.0
+                                Behavior on scale { NumberAnimation { duration: popup.ms; easing.type: popup.easing } }
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                visible: appIcon.status !== Image.Ready
+                                text: (row.modelData.name || "?").charAt(0).toUpperCase()
+                                color: popup.accent
+                                font.pixelSize: popup.fontSize + 6
+                                font.bold: true
+                            }
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 1
+                            Text {
+                                Layout.fillWidth: true
+                                text: row.modelData.name
+                                color: popup.fg
+                                font.pixelSize: popup.fontSize + 2
+                                font.bold: row.current
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                visible: text.length > 0
+                                text: row.modelData.comment || row.modelData.genericName || ""
+                                color: Qt.alpha(popup.fg, 0.5)
+                                font.pixelSize: popup.fontSize
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+                    MouseArea {
+                        id: hover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onEntered: list.currentIndex = row.index
+                        onClicked: launcher.launch(row.modelData)
+                    }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: launcher.results.length === 0
+                    text: popup.tr("noapps")
+                    color: Qt.alpha(popup.fg, 0.45)
+                    font.pixelSize: popup.fontSize + 1
+                }
+            }
+
+            Text {
+                text: popup.tr("launchhint")
+                color: Qt.alpha(popup.fg, 0.4)
+                font.pixelSize: popup.fontSize - 1
+            }
+        }
+    }
+}
+"###,
+    );
+    ensure_zenith_panel(
+        &dir.join("Notifications.qml"),
+        r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Wayland
+import Quickshell.Io
+import Quickshell.Services.Notifications
+
+// Meldingen: pop-ups rechtsboven + paneel met geschiedenis, niet-storen en alles wissen.
+// Werkt alleen als geen andere meldingendienst (swaync, dunst, mako, serpantinum) draait.
+Scope {
+    id: nc
+
+    property bool dnd: false
+    property var popups: []
+    readonly property var history: server.trackedNotifications.values
+
+    function hidePopup(n) { nc.popups = nc.popups.filter(x => x !== n); }
+    function clearAll() {
+        var all = nc.history.slice();
+        for (var i = 0; i < all.length; i++) all[i].dismiss();
+        nc.popups = [];
+    }
+
+    NotificationServer {
+        id: server
+        keepOnReload: true
+        actionsSupported: true
+        imageSupported: true
+        bodySupported: true
+        // Platte tekst: apps bepalen de inhoud, dus geen opmaak/links interpreteren.
+        bodyMarkupSupported: false
+        persistenceSupported: true
+        onNotification: n => {
+            n.tracked = true;
+            if (!nc.dnd || n.urgency === NotificationUrgency.Critical) nc.popups = nc.popups.concat([n]).slice(-4);
+        }
+    }
+
+    IpcHandler {
+        target: "notifications"
+        function toggle() { popup.active = !popup.active; }
+        function open() { popup.active = true; }
+        function close() { popup.active = false; }
+        function toggleDnd() { nc.dnd = !nc.dnd; }
+        function clear() { nc.clearAll(); }
+    }
+
+    // Eén melding als kaart (gebruikt door pop-ups én het paneel)
+    component NotifCard: Rectangle {
+        id: cardRoot
+        required property var notif
+        // Thema van het paneel (inline-components zien de ids van het bestand niet)
+        required property var theme
+        property bool compact: false
+        signal closeRequested()
+        implicitHeight: content.implicitHeight + 24
+        radius: 14
+        color: Qt.alpha(cardRoot.theme.surface, 0.9)
+        border.width: 1
+        border.color: notif && notif.urgency === NotificationUrgency.Critical ? "#f38ba8" : Qt.alpha(cardRoot.theme.border, 0.7)
+
+        RowLayout {
+            id: content
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 12
+            spacing: 12
+
+            Item {
+                Layout.alignment: Qt.AlignTop
+                implicitWidth: 36
+                implicitHeight: 36
+                Image {
+                    id: nIcon
+                    anchors.fill: parent
+                    source: !cardRoot.notif ? "" : (cardRoot.notif.image || (cardRoot.notif.appIcon ? Quickshell.iconPath(cardRoot.notif.appIcon, true) : ""))
+                    sourceSize: Qt.size(72, 72)
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                }
+                Text {
+                    anchors.centerIn: parent
+                    visible: nIcon.status !== Image.Ready
+                    text: "🔔"
+                    font.pixelSize: 20
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        Layout.fillWidth: true
+                        text: cardRoot.notif ? (cardRoot.notif.appName || "") : ""
+                        color: Qt.alpha(cardRoot.theme.fg, 0.5)
+                        font.pixelSize: cardRoot.theme.fontSize - 1
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        text: "✕"
+                        color: Qt.alpha(cardRoot.theme.fg, xArea.containsMouse ? 0.9 : 0.45)
+                        font.pixelSize: cardRoot.theme.fontSize
+                        MouseArea {
+                            id: xArea
+                            anchors.fill: parent
+                            anchors.margins: -6
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: cardRoot.closeRequested()
+                        }
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: cardRoot.notif ? cardRoot.notif.summary : ""
+                    textFormat: Text.PlainText
+                    color: cardRoot.theme.fg
+                    font.pixelSize: cardRoot.theme.fontSize + 2
+                    font.bold: true
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+                Text {
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    text: cardRoot.notif ? cardRoot.notif.body : ""
+                    textFormat: Text.PlainText
+                    color: Qt.alpha(cardRoot.theme.fg, 0.75)
+                    font.pixelSize: cardRoot.theme.fontSize + 1
+                    wrapMode: Text.Wrap
+                    maximumLineCount: cardRoot.compact ? 2 : 5
+                    elide: Text.ElideRight
+                }
+                // Actieknoppen van de app
+                Flow {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    spacing: 6
+                    visible: cardRoot.notif && cardRoot.notif.actions.length > 0
+                    Repeater {
+                        model: cardRoot.notif ? cardRoot.notif.actions : []
+                        Rectangle {
+                            required property var modelData
+                            implicitWidth: actText.implicitWidth + 20
+                            implicitHeight: 26
+                            radius: 8
+                            color: actArea.containsMouse ? Qt.alpha(cardRoot.theme.accent, 0.3) : Qt.alpha(cardRoot.theme.accent, 0.15)
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Text { id: actText; anchors.centerIn: parent; text: parent.modelData.text; color: cardRoot.theme.fg; font.pixelSize: cardRoot.theme.fontSize }
+                            MouseArea {
+                                id: actArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: parent.modelData.invoke()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===== Pop-ups rechtsboven =====
+    PanelWindow {
+        visible: nc.popups.length > 0
+        color: "transparent"
+        anchors { top: true; right: true }
+        margins { top: 52; right: 12 }
+        implicitWidth: 380
+        implicitHeight: Math.max(1, toastCol.implicitHeight)
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+        exclusionMode: ExclusionMode.Ignore
+
+        Column {
+            id: toastCol
+            width: parent.width
+            spacing: 8
+            Repeater {
+                model: nc.popups
+                NotifCard {
+                    id: toast
+                    required property var modelData
+                    notif: modelData
+                    theme: popup
+                    compact: true
+                    width: toastCol.width
+                    onCloseRequested: nc.hidePopup(modelData)
+
+                    // Inglijden van rechts
+                    opacity: 0
+                    transform: Translate {
+                        id: slide
+                        x: 40
+                        Behavior on x { NumberAnimation { duration: popup.ms; easing.type: popup.easing } }
+                    }
+                    Component.onCompleted: { opacity = 1; slide.x = 0; }
+                    Behavior on opacity { NumberAnimation { duration: popup.ms } }
+
+                    Timer {
+                        // Kritieke meldingen blijven staan tot je ze sluit
+                        running: toast.modelData && toast.modelData.urgency !== NotificationUrgency.Critical
+                        interval: toast.modelData && toast.modelData.expireTimeout > 0 ? toast.modelData.expireTimeout * 1000 : 5000
+                        onTriggered: nc.hidePopup(toast.modelData)
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        z: -1
+                        onClicked: nc.hidePopup(toast.modelData)
+                    }
+                }
+            }
+        }
+        Behavior on implicitHeight { NumberAnimation { duration: popup.ms; easing.type: popup.easing } }
+    }
+
+    // ===== Meldingenpaneel =====
+    ZenithPopup {
+        id: popup
+        title: popup.tr("notifications")
+        icon: "🔔"
+        position: "top-right"
+        panelWidth: 400
+        panelHeight: 560
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                // Niet storen
+                Rectangle {
+                    implicitWidth: dndRow.implicitWidth + 20
+                    implicitHeight: 30
+                    radius: 10
+                    color: nc.dnd ? Qt.alpha(popup.accent, 0.25) : Qt.alpha(popup.fg, 0.06)
+                    border.width: nc.dnd ? 1 : 0
+                    border.color: popup.accent
+                    Behavior on color { ColorAnimation { duration: popup.ms } }
+                    RowLayout {
+                        id: dndRow
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Text { text: nc.dnd ? "🔕" : "🔔"; font.pixelSize: popup.fontSize + 1 }
+                        Text { text: popup.tr("dnd"); color: popup.fg; font.pixelSize: popup.fontSize }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: nc.dnd = !nc.dnd
+                    }
+                }
+                Item { Layout.fillWidth: true }
+                Rectangle {
+                    visible: nc.history.length > 0
+                    implicitWidth: clearText.implicitWidth + 20
+                    implicitHeight: 30
+                    radius: 10
+                    color: clearArea.containsMouse ? Qt.alpha("#f38ba8", 0.22) : Qt.alpha(popup.fg, 0.06)
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Text { id: clearText; anchors.centerIn: parent; text: popup.tr("wipe"); color: popup.fg; font.pixelSize: popup.fontSize }
+                    MouseArea {
+                        id: clearArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: nc.clearAll()
+                    }
+                }
+            }
+
+            ListView {
+                id: hist
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 8
+                // Nieuwste bovenaan
+                model: nc.history.slice().reverse()
+                add: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: popup.ms } }
+                remove: Transition { NumberAnimation { property: "opacity"; to: 0; duration: popup.ms } }
+                delegate: NotifCard {
+                    required property var modelData
+                    notif: modelData
+                    theme: popup
+                    width: hist.width
+                    onCloseRequested: modelData.dismiss()
+                }
+
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    visible: nc.history.length === 0
+                    spacing: 6
+                    Text { Layout.alignment: Qt.AlignHCenter; text: "🔕"; font.pixelSize: 40; opacity: 0.6 }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: popup.tr("nonotif")
+                        color: Qt.alpha(popup.fg, 0.5)
+                        font.pixelSize: popup.fontSize + 1
+                    }
+                }
             }
         }
     }
@@ -3948,5 +4517,43 @@ fn ensure_waybar_import(home: &Path) {
                 let _ = std::fs::write(&waybar_style, new_content);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_zenith_panel;
+
+    #[test]
+    fn zenith_panels_update_safely() {
+        let dir = std::env::temp_dir().join(format!("zenith-panels-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("Media.qml");
+
+        ensure_zenith_panel(&p, "// zenith-panel v1");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "// zenith-panel v1");
+
+        // Nieuwere Zenith-versie: bijwerken met back-up
+        ensure_zenith_panel(&p, "// zenith-panel v2");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "// zenith-panel v2");
+        assert_eq!(std::fs::read_to_string(dir.join("Media.qml.bak")).unwrap(), "// zenith-panel v1");
+
+        // Oudere versie zonder markering maar met ZenithPopup telt ook als van Zenith
+        std::fs::write(&p, "ZenithPopup { }").unwrap();
+        ensure_zenith_panel(&p, "// zenith-panel v3");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "// zenith-panel v3");
+
+        // Oude ZenithPopup.qml (zonder markering) wordt herkend aan zijn kopregel
+        let popup = dir.join("ZenithPopup.qml");
+        std::fs::write(&popup, "// Gedeeld pop-uppaneel van Zenith: oud").unwrap();
+        ensure_zenith_panel(&popup, "// zenith-panel nieuw");
+        assert_eq!(std::fs::read_to_string(&popup).unwrap(), "// zenith-panel nieuw");
+
+        // Eigen bestand van de gebruiker: nooit overschrijven
+        std::fs::write(&p, "Rectangle { color: \"red\" }").unwrap();
+        ensure_zenith_panel(&p, "// zenith-panel v4");
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "Rectangle { color: \"red\" }");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
