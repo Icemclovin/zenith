@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Test Zenith zonder serpantinum: dezelfde toetsen, maar met Zenith-acties.
+# Alles is tijdelijk: de binds bestaan alleen live (hyprctl eval). `stop`, uitloggen
+# of herstarten zet je eigen Hyprland-config en serpantinum terug.
+#
+#   zenith-test-session start   serpantinum uit, Zenith-balk aan, toetsen omgebogen
+#   zenith-test-session stop    Zenith-balk uit, eigen binds terug, serpantinum aan
+set -euo pipefail
+
+QS_CFG="$HOME/.config/quickshell/shell.qml"
+SERPD="$HOME/.local/share/serpantinum/bin/serpantinumd"
+
+# Lua voor Hyprland >= 0.55. Elke combinatie eerst ontbinden zodat er niets dubbel afgaat.
+lua_binds() {
+    cat <<'LUA'
+local CFG = os.getenv("HOME") .. "/.config/quickshell/shell.qml"
+local IPC = "quickshell -p " .. CFG .. " ipc call "
+local SHOTS = "mkdir -p ~/Pictures/Screenshots && f=~/Pictures/Screenshots/$(date +%F_%H-%M-%S).png; "
+
+local function rebind(keys, cmd, opts)
+  hl.unbind(keys)
+  hl.bind(keys, hl.dsp.exec_cmd(cmd), opts or {})
+end
+local media = { locked = true }
+local held = { locked = true, repeating = true }
+
+-- Volume en helderheid: actie + Zenith-OSD met de nieuwe waarde
+local vol = "; " .. IPC .. "osd popup 🔊 Volume $(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print $2}')"
+local bri = "; " .. IPC .. "osd popup ☀️ Helderheid $(brightnessctl -m | cut -d, -f4 | tr -d % | awk '{print $1/100}')"
+rebind("XF86AudioRaiseVolume", "wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+" .. vol, held)
+rebind("XF86AudioLowerVolume", "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-" .. vol, held)
+rebind("XF86AudioMute", "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle" .. vol, media)
+rebind("XF86AudioMicMute", "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle", media)
+rebind("XF86MonBrightnessUp", "brightnessctl set 5%+" .. bri, held)
+rebind("XF86MonBrightnessDown", "brightnessctl set 5%-" .. bri, held)
+
+-- Schermafbeeldingen (grim/slurp, bewerken met satty)
+rebind("Print", SHOTS .. "grim -g \"$(slurp)\" \"$f\" && wl-copy < \"$f\"", media)
+rebind("SHIFT + Print", "grim -g \"$(slurp)\" - | satty -f -", media)
+rebind("SUPER + Print", SHOTS .. "grim \"$f\" && wl-copy < \"$f\"", media)
+rebind("SUPER + SHIFT + Print", "grim - | satty -f -", media)
+
+-- Vergrendelen
+rebind("XF86PowerOff", "hyprlock", media)
+rebind("SUPER + L", "hyprlock", media)
+
+-- Shell-acties → Zenith
+rebind("SUPER + R", "quickshell kill -p " .. CFG .. "; quickshell -d -p " .. CFG)
+rebind("SUPER + D", "rofi -show drun")
+rebind("SUPER + W", "zenith")
+rebind("SUPER + C", IPC .. "clipboard toggle")
+rebind("SUPER + S", IPC .. "calendar toggle")
+rebind("SUPER + M", IPC .. "media toggle")
+for _, k in ipairs({ "B", "N", "V" }) do
+  rebind("SUPER + " .. k, IPC .. "controlCenter toggle")
+end
+for _, k in ipairs({ "H", "A" }) do
+  rebind("SUPER + " .. k, "notify-send 'Zenith-test' 'Deze serpantinum-functie heeft (nog) geen Zenith-versie'")
+end
+
+-- Werkbladen 1-10 (toets 0 = werkblad 10)
+for i = 1, 10 do
+  local key = tostring(i % 10)
+  hl.unbind("SUPER + " .. key)
+  hl.bind("SUPER + " .. key, hl.dsp.focus({ workspace = i }))
+  hl.unbind("SUPER + SHIFT + " .. key)
+  hl.bind("SUPER + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
+end
+LUA
+}
+
+case "${1:-}" in
+    start)
+        [ -x "$SERPD" ] && "$SERPD" stop >/dev/null 2>&1 || true
+        # Ook vastgelopen serpantinum-opdrachten opruimen.
+        # Verankerd aan het begin van de opdrachtregel: nooit andere processen raken die toevallig
+        # dit pad noemen (bv. een terminal of editor).
+        pkill -f "^quickshell -p $HOME/.local/share/serpantinum/" 2>/dev/null || true
+        quickshell kill -p "$QS_CFG" >/dev/null 2>&1 || true
+        setsid quickshell -d -p "$QS_CFG" >/dev/null 2>&1 < /dev/null
+        hyprctl eval "$(lua_binds)" >/dev/null
+        notify-send "Zenith-testsessie" "serpantinum staat uit, Zenith is actief. Terug: zenith-test-session stop" || true
+        echo "Zenith-testsessie actief. Terug naar serpantinum: zenith-test-session stop"
+        ;;
+    stop)
+        quickshell kill -p "$QS_CFG" >/dev/null 2>&1 || true
+        hyprctl reload >/dev/null # eigen binds terug; live evals vervallen
+        [ -x "$SERPD" ] && { setsid "$SERPD" start >/dev/null 2>&1 < /dev/null & }
+        echo "Terug naar serpantinum."
+        ;;
+    lua)
+        lua_binds # alleen tonen (voor controle)
+        ;;
+    *)
+        echo "Gebruik: zenith-test-session start|stop" >&2
+        exit 2
+        ;;
+esac

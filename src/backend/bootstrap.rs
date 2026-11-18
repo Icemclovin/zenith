@@ -539,12 +539,19 @@ Scope {
     Panels.Osd {
         id: osdPanel
     }
+
+    // ==========================================
+    // 4. Pop-uppanelen: klembord, kalender, media (via IPC te openen)
+    // ==========================================
+    Panels.Clipboard {}
+    Panels.Calendar {}
+    Panels.Media {}
 }
 "###;
     if shell_qml.exists() {
         if let Ok(content) = read_to_string(&shell_qml) {
             // Als het bestaande bestand verouderd is (mist ModuleLoader, FileView, Scope of Panels)
-            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") {
+            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") || !content.contains("Panels.Media") {
                 // Eigen aanpassingen nooit kwijtraken: unieke back-up, en alleen overschrijven als die gelukt is.
                 let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
                 let backup = qs_dir.join(format!("shell.qml.bak-{}", stamp));
@@ -1395,6 +1402,915 @@ Rectangle {
 
 
 fn ensure_panels(dir: &Path) {
+    // Pop-uppanelen (klembord, kalender, media) delen ZenithPopup.qml.
+    ensure_file_exists(
+        &dir.join("ZenithPopup.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Wayland
+import Quickshell.Io
+
+// Gedeeld pop-uppaneel van Zenith: sluit bij klik ernaast of Escape, animeert met de
+// instellingen uit Zenith → Statusbalk → Animaties en volgt de kleuren van de balk.
+Scope {
+    id: pop
+
+    property bool active: false
+    property string title: ""
+    property string icon: ""
+    // "top" (midden), "top-left" of "top-right"
+    property string position: "top"
+    property int panelWidth: 380
+    property int panelHeight: 440
+    property bool wantsKeyboard: false
+    default property alias content: body.data
+
+    FileView {
+        id: cfgFile
+        path: Quickshell.env("HOME") + "/.config/quickshell/zenith-shell.json"
+        watchChanges: true
+    }
+    readonly property var cfg: {
+        try {
+            var t = cfgFile.text().trim();
+            if (t.length > 0) return JSON.parse(t);
+        } catch (e) {}
+        return {};
+    }
+    readonly property var st: pop.cfg.styling || {}
+    readonly property var an: pop.cfg.animations || {}
+    readonly property color bg: pop.st.background || "#1e1e2e"
+    readonly property color surface: pop.st.pill_bg || "#181825"
+    readonly property color fg: pop.st.text_color || "#cdd6f4"
+    readonly property color accent: pop.st.accent || "#89b4fa"
+    readonly property color border: pop.st.border_color || "#45475a"
+    readonly property int fontSize: pop.st.font_size || 11
+    readonly property int ms: pop.an.duration_ms !== undefined ? pop.an.duration_ms : 250
+    // Zelfde taal als de Zenith-app (nl/en/de/es)
+    readonly property string lang: pop.cfg.language || "nl"
+    readonly property var locale: Qt.locale(({ nl: "nl_NL", en: "en_GB", de: "de_DE", es: "es_ES" })[pop.lang] || "nl_NL")
+    readonly property var dict: {
+        "nl": {
+            "clipboard": "Klembord",
+            "search": "Zoek in klembord…",
+            "empty": "Klembord is leeg",
+            "noresults": "Geen resultaten",
+            "hint": "↑↓ kiezen · Enter kopiëren · Esc sluiten",
+            "wipe": "Alles wissen",
+            "wipeconfirm": "Klik nogmaals om alles te wissen",
+            "image": "Afbeelding",
+            "calendar": "Kalender",
+            "media": "Media",
+            "untitled": "Onbekende titel",
+            "nothing": "Er speelt nu niets"
+        },
+        "en": {
+            "clipboard": "Clipboard",
+            "search": "Search clipboard…",
+            "empty": "Clipboard is empty",
+            "noresults": "No results",
+            "hint": "↑↓ select · Enter copy · Esc close",
+            "wipe": "Clear all",
+            "wipeconfirm": "Click again to clear everything",
+            "image": "Image",
+            "calendar": "Calendar",
+            "media": "Media",
+            "untitled": "Unknown title",
+            "nothing": "Nothing is playing"
+        },
+        "de": {
+            "clipboard": "Zwischenablage",
+            "search": "Zwischenablage durchsuchen…",
+            "empty": "Zwischenablage ist leer",
+            "noresults": "Keine Ergebnisse",
+            "hint": "↑↓ wählen · Enter kopieren · Esc schließen",
+            "wipe": "Alles löschen",
+            "wipeconfirm": "Erneut klicken, um alles zu löschen",
+            "image": "Bild",
+            "calendar": "Kalender",
+            "media": "Medien",
+            "untitled": "Unbekannter Titel",
+            "nothing": "Es wird nichts abgespielt"
+        },
+        "es": {
+            "clipboard": "Portapapeles",
+            "search": "Buscar en el portapapeles…",
+            "empty": "El portapapeles está vacío",
+            "noresults": "Sin resultados",
+            "hint": "↑↓ elegir · Enter copiar · Esc cerrar",
+            "wipe": "Borrar todo",
+            "wipeconfirm": "Haz clic otra vez para borrar todo",
+            "image": "Imagen",
+            "calendar": "Calendario",
+            "media": "Multimedia",
+            "untitled": "Título desconocido",
+            "nothing": "No se está reproduciendo nada"
+        }
+    }
+    function tr(key) {
+        var d = pop.dict[pop.lang] || pop.dict.nl;
+        return d[key] || pop.dict.nl[key] || key;
+    }
+    readonly property int easing: {
+        var e = Easing[pop.an.curve || "OutCubic"];
+        return e !== undefined ? e : Easing.OutCubic;
+    }
+
+    // Klik buiten het paneel sluit het
+    PanelWindow {
+        visible: pop.active
+        color: "transparent"
+        anchors { top: true; bottom: true; left: true; right: true }
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+        MouseArea {
+            anchors.fill: parent
+            onClicked: pop.active = false
+        }
+    }
+
+    PanelWindow {
+        visible: pop.active || card.opacity > 0.01
+        color: "transparent"
+        implicitWidth: pop.panelWidth
+        implicitHeight: pop.panelHeight
+        anchors {
+            top: true
+            left: pop.position === "top-left"
+            right: pop.position === "top-right"
+        }
+        margins { top: 52; left: 12; right: 12 }
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: pop.active && pop.wantsKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+
+        Rectangle {
+            id: card
+            anchors.fill: parent
+            radius: 20
+            color: Qt.alpha(pop.bg, 0.95)
+            border.width: 1
+            border.color: Qt.alpha(pop.border, 0.8)
+            clip: true
+
+            opacity: pop.active ? 1.0 : 0.0
+            scale: pop.active ? 1.0 : 0.94
+            transformOrigin: Item.Top
+            transform: Translate {
+                y: pop.active ? 0 : -14
+                Behavior on y { NumberAnimation { duration: pop.ms; easing.type: pop.easing } }
+            }
+            Behavior on opacity { NumberAnimation { duration: Math.max(120, pop.ms * 0.8); easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: pop.ms; easing.type: pop.easing } }
+
+            Keys.onEscapePressed: pop.active = false
+            focus: pop.active
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 12
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Text {
+                        visible: pop.icon.length > 0
+                        text: pop.icon
+                        font.pixelSize: pop.fontSize + 5
+                    }
+                    Text {
+                        text: pop.title
+                        color: pop.fg
+                        font.pixelSize: pop.fontSize + 4
+                        font.bold: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    Rectangle {
+                        implicitWidth: 26
+                        implicitHeight: 26
+                        radius: 13
+                        color: closeArea.containsMouse ? Qt.alpha(pop.fg, 0.18) : Qt.alpha(pop.fg, 0.08)
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: "✕"
+                            color: pop.fg
+                            font.pixelSize: pop.fontSize
+                        }
+                        MouseArea {
+                            id: closeArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: pop.active = false
+                        }
+                    }
+                }
+
+                Item {
+                    id: body
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                }
+            }
+        }
+    }
+}
+"###,
+    );
+    ensure_file_exists(
+        &dir.join("Clipboard.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+// Klembord-geschiedenis via cliphist: zoeken, ↑/↓ + Enter of klik om te kopiëren.
+Scope {
+    id: clip
+
+    property var entries: []
+    property string query: ""
+    // Wissen vraagt een tweede klik binnen 3 s: de geschiedenis is niet terug te halen.
+    property bool confirmWipe: false
+    Timer { id: wipeReset; interval: 3000; onTriggered: clip.confirmWipe = false }
+    readonly property var filtered: {
+        var q = clip.query.toLowerCase();
+        var out = [];
+        for (var i = 0; i < clip.entries.length && out.length < 200; i++) {
+            var e = clip.entries[i];
+            if (q.length === 0 || e.text.toLowerCase().indexOf(q) !== -1) out.push(e);
+        }
+        return out;
+    }
+
+    IpcHandler {
+        target: "clipboard"
+        function toggle() { popup.active ? clip.close() : clip.open(); }
+        function open() { clip.open(); }
+        function close() { clip.close(); }
+    }
+
+    function open() {
+        clip.query = "";
+        search.text = "";
+        listProc.running = true;
+        popup.active = true;
+        search.forceActiveFocus();
+    }
+    function close() { popup.active = false; }
+
+    function parse(text) {
+        var out = [];
+        var lines = text.split("\n");
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.length === 0) continue;
+            var tab = line.indexOf("\t");
+            var body = tab >= 0 ? line.substring(tab + 1) : line;
+            var isImage = body.indexOf("[[ binary data") === 0;
+            out.push({ raw: line, text: isImage ? popup.tr("image") + " · " + body.replace("[[ binary data ", "").replace(" ]]", "") : body.trim(), image: isImage });
+        }
+        clip.entries = out;
+        list.currentIndex = 0;
+    }
+
+    function copy(entry) {
+        if (!entry) return;
+        // De regel gaat als argument mee, nooit als shell-code.
+        copyProc.command = ["bash", "-c", "printf '%s' \"$1\" | cliphist decode | wl-copy", "_", entry.raw];
+        copyProc.running = true;
+        clip.close();
+    }
+
+    function remove(entry) {
+        deleteProc.command = ["bash", "-c", "printf '%s' \"$1\" | cliphist delete", "_", entry.raw];
+        deleteProc.running = true;
+    }
+
+    Process {
+        id: listProc
+        command: ["cliphist", "list"]
+        stdout: StdioCollector { onStreamFinished: clip.parse(this.text) }
+    }
+    Process { id: copyProc }
+    Process {
+        id: deleteProc
+        onExited: listProc.running = true
+    }
+    Process {
+        id: wipeProc
+        command: ["cliphist", "wipe"]
+        onExited: listProc.running = true
+    }
+
+    ZenithPopup {
+        id: popup
+        title: popup.tr("clipboard")
+        icon: "📋"
+        position: "top"
+        panelWidth: 460
+        panelHeight: 520
+        wantsKeyboard: true
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+
+            // Zoekveld
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 38
+                radius: 12
+                color: Qt.alpha(popup.fg, 0.06)
+                border.width: search.activeFocus ? 1 : 0
+                border.color: popup.accent
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    spacing: 8
+                    Text { text: "🔍"; font.pixelSize: popup.fontSize + 1 }
+                    TextInput {
+                        id: search
+                        Layout.fillWidth: true
+                        color: popup.fg
+                        font.pixelSize: popup.fontSize + 2
+                        clip: true
+                        onTextChanged: { clip.query = text; list.currentIndex = 0; }
+                        Keys.onEscapePressed: clip.close()
+                        Keys.onDownPressed: list.incrementCurrentIndex()
+                        Keys.onUpPressed: list.decrementCurrentIndex()
+                        Keys.onReturnPressed: clip.copy(clip.filtered[list.currentIndex])
+                        Text {
+                            visible: search.text.length === 0
+                            text: popup.tr("search")
+                            color: Qt.alpha(popup.fg, 0.4)
+                            font.pixelSize: popup.fontSize + 2
+                        }
+                    }
+                    Text {
+                        text: clip.filtered.length + " / " + clip.entries.length
+                        color: Qt.alpha(popup.fg, 0.45)
+                        font.pixelSize: popup.fontSize
+                    }
+                }
+            }
+
+            ListView {
+                id: list
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 4
+                model: clip.filtered
+                highlightMoveDuration: popup.ms
+                keyNavigationEnabled: true
+
+                delegate: Rectangle {
+                    id: row
+                    required property var modelData
+                    required property int index
+                    width: list.width
+                    implicitHeight: 44
+                    radius: 10
+                    readonly property bool current: ListView.isCurrentItem
+                    color: current ? Qt.alpha(popup.accent, 0.18) : (hover.containsMouse ? Qt.alpha(popup.fg, 0.07) : "transparent")
+                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                    // Zachte entree per regel
+                    opacity: 0
+                    Component.onCompleted: opacity = 1
+                    Behavior on opacity { NumberAnimation { duration: popup.ms } }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 8
+                        spacing: 10
+                        Text {
+                            text: row.modelData.image ? "🖼️" : "📝"
+                            font.pixelSize: popup.fontSize + 2
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: row.modelData.text
+                            color: popup.fg
+                            font.pixelSize: popup.fontSize + 1
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                        }
+                        Rectangle {
+                            visible: hover.containsMouse || row.current
+                            implicitWidth: 26
+                            implicitHeight: 26
+                            radius: 8
+                            color: delArea.containsMouse ? Qt.alpha("#f38ba8", 0.25) : "transparent"
+                            Text { anchors.centerIn: parent; text: "🗑"; font.pixelSize: popup.fontSize }
+                            MouseArea {
+                                id: delArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: clip.remove(row.modelData)
+                            }
+                        }
+                    }
+                    MouseArea {
+                        id: hover
+                        anchors.fill: parent
+                        anchors.rightMargin: 40
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: clip.copy(row.modelData)
+                    }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: clip.filtered.length === 0
+                    text: clip.entries.length === 0 ? popup.tr("empty") : popup.tr("noresults")
+                    color: Qt.alpha(popup.fg, 0.45)
+                    font.pixelSize: popup.fontSize + 1
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: popup.tr("hint")
+                    color: Qt.alpha(popup.fg, 0.4)
+                    font.pixelSize: popup.fontSize - 1
+                }
+                Item { Layout.fillWidth: true }
+                Rectangle {
+                    implicitWidth: wipeText.implicitWidth + 20
+                    implicitHeight: 26
+                    radius: 8
+                    color: clip.confirmWipe ? Qt.alpha("#f38ba8", 0.35) : (wipeArea.containsMouse ? Qt.alpha("#f38ba8", 0.22) : Qt.alpha(popup.fg, 0.06))
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Text { id: wipeText; anchors.centerIn: parent; text: clip.confirmWipe ? popup.tr("wipeconfirm") : popup.tr("wipe"); color: popup.fg; font.pixelSize: popup.fontSize }
+                    MouseArea {
+                        id: wipeArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (clip.confirmWipe) {
+                                clip.confirmWipe = false;
+                                wipeProc.running = true;
+                            } else {
+                                clip.confirmWipe = true;
+                                wipeReset.restart();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"###,
+    );
+    ensure_file_exists(
+        &dir.join("Calendar.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+
+// Kalender: klok, maandoverzicht met vandaag gemarkeerd, bladeren met pijlen of scrollwiel.
+Scope {
+    id: cal
+
+    property date now: new Date()
+    property int viewYear: now.getFullYear()
+    property int viewMonth: now.getMonth()
+    readonly property var loc: popup.locale
+    // Maandag-eerst tenzij de locale anders zegt (Qt: 1 = maandag … 7 = zondag)
+    readonly property int firstDay: cal.loc.firstDayOfWeek === 0 ? 7 : cal.loc.firstDayOfWeek
+
+    IpcHandler {
+        target: "calendar"
+        function toggle() { popup.active ? cal.close() : cal.open(); }
+        function open() { cal.open(); }
+        function close() { cal.close(); }
+    }
+
+    function open() {
+        cal.now = new Date();
+        cal.viewYear = cal.now.getFullYear();
+        cal.viewMonth = cal.now.getMonth();
+        popup.active = true;
+    }
+    function close() { popup.active = false; }
+
+    function shift(delta) {
+        var m = cal.viewMonth + delta;
+        cal.viewYear += Math.floor(m / 12);
+        cal.viewMonth = ((m % 12) + 12) % 12;
+        gridFade.restart();
+    }
+
+    // 42 dagen (6 weken) vanaf de eerste weekdag vóór de 1e van de maand
+    readonly property var days: {
+        var first = new Date(cal.viewYear, cal.viewMonth, 1);
+        var jsDay = first.getDay() === 0 ? 7 : first.getDay(); // 1 = ma … 7 = zo
+        var offset = (jsDay - cal.firstDay + 7) % 7;
+        var out = [];
+        for (var i = 0; i < 42; i++) {
+            var d = new Date(cal.viewYear, cal.viewMonth, 1 - offset + i);
+            out.push({
+                day: d.getDate(),
+                inMonth: d.getMonth() === cal.viewMonth,
+                today: d.toDateString() === cal.now.toDateString(),
+                weekend: d.getDay() === 0 || d.getDay() === 6
+            });
+        }
+        return out;
+    }
+
+    Timer {
+        interval: 1000
+        running: popup.active
+        repeat: true
+        onTriggered: cal.now = new Date()
+    }
+
+    ZenithPopup {
+        id: popup
+        title: popup.tr("calendar")
+        icon: "📅"
+        position: "top-right"
+        panelWidth: 360
+        panelHeight: 470
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+
+            // Klok en datum
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                Text {
+                    text: Qt.formatTime(cal.now, "HH:mm")
+                    color: popup.fg
+                    font.pixelSize: popup.fontSize * 4
+                    font.weight: Font.Light
+                }
+                Text {
+                    text: cal.loc.toString(cal.now, "dddd d MMMM yyyy")
+                    color: popup.accent
+                    font.pixelSize: popup.fontSize + 2
+                    font.bold: true
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Qt.alpha(popup.fg, 0.1) }
+
+            // Maandnavigatie
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: cal.loc.standaloneMonthName(cal.viewMonth, Locale.LongFormat) + " " + cal.viewYear
+                    color: popup.fg
+                    font.pixelSize: popup.fontSize + 3
+                    font.bold: true
+                    font.capitalization: Font.Capitalize
+                }
+                Item { Layout.fillWidth: true }
+                Repeater {
+                    model: [{ label: "‹", delta: -1 }, { label: "•", delta: 0 }, { label: "›", delta: 1 }]
+                    Rectangle {
+                        required property var modelData
+                        implicitWidth: 28
+                        implicitHeight: 28
+                        radius: 9
+                        color: navArea.containsMouse ? Qt.alpha(popup.accent, 0.2) : Qt.alpha(popup.fg, 0.06)
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: parent.modelData.label
+                            color: popup.fg
+                            font.pixelSize: popup.fontSize + 4
+                        }
+                        MouseArea {
+                            id: navArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: parent.modelData.delta === 0 ? cal.open() : cal.shift(parent.modelData.delta)
+                        }
+                    }
+                }
+            }
+
+            // Weekdagen
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                Repeater {
+                    model: 7
+                    Text {
+                        required property int index
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        text: cal.loc.dayName(((cal.firstDay - 1 + index) % 7 + 1) % 7, Locale.ShortFormat)
+                        color: Qt.alpha(popup.fg, 0.5)
+                        font.pixelSize: popup.fontSize
+                        font.bold: true
+                        font.capitalization: Font.Capitalize
+                    }
+                }
+            }
+
+            // Dagenraster
+            GridLayout {
+                id: grid
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                columns: 7
+                rowSpacing: 4
+                columnSpacing: 4
+                NumberAnimation on opacity { id: gridFade; from: 0.2; to: 1.0; duration: popup.ms; easing.type: popup.easing; running: false }
+
+                Repeater {
+                    model: cal.days
+                    Rectangle {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 10
+                        color: modelData.today ? popup.accent : (dayArea.containsMouse && modelData.inMonth ? Qt.alpha(popup.fg, 0.08) : "transparent")
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: parent.modelData.day
+                            font.pixelSize: popup.fontSize + 1
+                            font.bold: parent.modelData.today
+                            color: parent.modelData.today ? popup.bg
+                                 : !parent.modelData.inMonth ? Qt.alpha(popup.fg, 0.25)
+                                 : parent.modelData.weekend ? Qt.alpha(popup.fg, 0.6)
+                                 : popup.fg
+                        }
+                        MouseArea { id: dayArea; anchors.fill: parent; hoverEnabled: true }
+                    }
+                }
+            }
+        }
+
+        // Scrollwiel bladert door maanden
+        WheelHandler {
+            onWheel: event => cal.shift(event.angleDelta.y > 0 ? -1 : 1)
+        }
+    }
+}
+"###,
+    );
+    ensure_file_exists(
+        &dir.join("Media.qml"),
+        r###"import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Io
+import Quickshell.Services.Mpris
+
+// Mediaspeler via MPRIS: hoes, titel/artiest, voortgang (klik om te spoelen), bediening.
+Scope {
+    id: media
+
+    readonly property var players: Mpris.players.values
+    property int chosen: -1
+    // Gekozen speler, anders de eerste die speelt, anders de eerste
+    readonly property var player: {
+        if (media.chosen >= 0 && media.chosen < media.players.length) return media.players[media.chosen];
+        for (var i = 0; i < media.players.length; i++) {
+            if (media.players[i].isPlaying) return media.players[i];
+        }
+        return media.players.length > 0 ? media.players[0] : null;
+    }
+
+    IpcHandler {
+        target: "media"
+        function toggle() { popup.active = !popup.active; }
+        function open() { popup.active = true; }
+        function close() { popup.active = false; }
+    }
+
+    function fmt(sec) {
+        if (!isFinite(sec) || sec < 0) return "0:00";
+        var s = Math.floor(sec % 60);
+        return Math.floor(sec / 60) + ":" + (s < 10 ? "0" : "") + s;
+    }
+
+    // MPRIS stuurt geen positie-updates tijdens afspelen: zelf verversen
+    Timer {
+        interval: 1000
+        repeat: true
+        running: popup.active && media.player !== null && media.player.isPlaying
+        onTriggered: media.player.positionChanged()
+    }
+
+    ZenithPopup {
+        id: popup
+        title: popup.tr("media")
+        icon: "🎵"
+        position: "top"
+        panelWidth: 420
+        panelHeight: 300
+
+        // Vervaagde hoes als achtergrond
+        Image {
+            anchors.fill: parent
+            anchors.margins: -16
+            source: media.player ? media.player.trackArtUrl : ""
+            fillMode: Image.PreserveAspectCrop
+            opacity: status === Image.Ready ? 0.14 : 0
+            Behavior on opacity { NumberAnimation { duration: popup.ms * 2 } }
+            layer.enabled: true
+            layer.smooth: true
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 14
+            visible: media.player !== null
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 16
+
+                // Hoes
+                Rectangle {
+                    implicitWidth: 120
+                    implicitHeight: 120
+                    radius: 16
+                    color: Qt.alpha(popup.fg, 0.08)
+                    clip: true
+                    scale: media.player && media.player.isPlaying ? 1.0 : 0.94
+                    Behavior on scale { NumberAnimation { duration: popup.ms; easing.type: popup.easing } }
+                    Image {
+                        id: art
+                        anchors.fill: parent
+                        source: media.player ? media.player.trackArtUrl : ""
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        opacity: status === Image.Ready ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: popup.ms } }
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        visible: art.status !== Image.Ready
+                        text: "🎵"
+                        font.pixelSize: 40
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text {
+                        Layout.fillWidth: true
+                        text: media.player ? (media.player.trackTitle || popup.tr("untitled")) : ""
+                        color: popup.fg
+                        font.pixelSize: popup.fontSize + 5
+                        font.bold: true
+                        elide: Text.ElideRight
+                        maximumLineCount: 2
+                        wrapMode: Text.Wrap
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: media.player ? (media.player.trackArtist || "") : ""
+                        color: popup.accent
+                        font.pixelSize: popup.fontSize + 2
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: media.player ? (media.player.trackAlbum || "") : ""
+                        color: Qt.alpha(popup.fg, 0.5)
+                        font.pixelSize: popup.fontSize
+                        elide: Text.ElideRight
+                    }
+                    Item { Layout.fillHeight: true }
+                    // Speler wisselen (alleen bij meerdere spelers)
+                    Text {
+                        visible: media.players.length > 1
+                        text: "⇄ " + (media.player ? media.player.identity : "")
+                        color: Qt.alpha(popup.fg, 0.55)
+                        font.pixelSize: popup.fontSize
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: media.chosen = (media.players.indexOf(media.player) + 1) % media.players.length
+                        }
+                    }
+                }
+            }
+
+            // Voortgang: klik om te spoelen
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                visible: media.player !== null && media.player.lengthSupported && media.player.length > 0
+                Rectangle {
+                    id: track
+                    Layout.fillWidth: true
+                    implicitHeight: seekArea.containsMouse ? 8 : 5
+                    radius: height / 2
+                    color: Qt.alpha(popup.fg, 0.14)
+                    Behavior on implicitHeight { NumberAnimation { duration: 120 } }
+                    Rectangle {
+                        height: parent.height
+                        radius: parent.radius
+                        color: popup.accent
+                        width: media.player && media.player.length > 0 ? parent.width * Math.min(1, media.player.position / media.player.length) : 0
+                        Behavior on width { NumberAnimation { duration: 900; easing.type: Easing.Linear } }
+                    }
+                    MouseArea {
+                        id: seekArea
+                        anchors.fill: parent
+                        anchors.topMargin: -6
+                        anchors.bottomMargin: -6
+                        hoverEnabled: true
+                        cursorShape: media.player && media.player.canSeek ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: mouse => {
+                            if (media.player && media.player.canSeek) media.player.position = media.player.length * (mouse.x / width);
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text { text: media.fmt(media.player ? media.player.position : 0); color: Qt.alpha(popup.fg, 0.55); font.pixelSize: popup.fontSize - 1 }
+                    Item { Layout.fillWidth: true }
+                    Text { text: media.fmt(media.player ? media.player.length : 0); color: Qt.alpha(popup.fg, 0.55); font.pixelSize: popup.fontSize - 1 }
+                }
+            }
+
+            // Bediening
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 18
+                Repeater {
+                    model: [
+                        { icon: "⏮", act: "prev", big: false },
+                        { icon: media.player && media.player.isPlaying ? "⏸" : "▶", act: "toggle", big: true },
+                        { icon: "⏭", act: "next", big: false }
+                    ]
+                    Rectangle {
+                        required property var modelData
+                        implicitWidth: modelData.big ? 54 : 40
+                        implicitHeight: implicitWidth
+                        radius: implicitWidth / 2
+                        color: modelData.big ? popup.accent : (btnArea.containsMouse ? Qt.alpha(popup.fg, 0.14) : Qt.alpha(popup.fg, 0.06))
+                        scale: btnArea.pressed ? 0.9 : (btnArea.containsMouse ? 1.06 : 1.0)
+                        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Text {
+                            anchors.centerIn: parent
+                            text: parent.modelData.icon
+                            color: parent.modelData.big ? popup.bg : popup.fg
+                            font.pixelSize: parent.modelData.big ? 22 : 16
+                        }
+                        MouseArea {
+                            id: btnArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                var p = media.player;
+                                if (!p) return;
+                                if (parent.modelData.act === "prev" && p.canGoPrevious) p.previous();
+                                else if (parent.modelData.act === "next" && p.canGoNext) p.next();
+                                else if (parent.modelData.act === "toggle" && p.canTogglePlaying) p.togglePlaying();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Niets speelt
+        ColumnLayout {
+            anchors.centerIn: parent
+            visible: media.player === null
+            spacing: 6
+            Text { Layout.alignment: Qt.AlignHCenter; text: "🎧"; font.pixelSize: 44 }
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: popup.tr("nothing")
+                color: Qt.alpha(popup.fg, 0.6)
+                font.pixelSize: popup.fontSize + 2
+            }
+        }
+    }
+}
+"###,
+    );
     ensure_file_exists(
         &dir.join("ControlCenter.qml"),
         r###"import QtQuick
