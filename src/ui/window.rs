@@ -6,8 +6,9 @@ use gtk4::{
 };
 use libadwaita::prelude::*;
 use libadwaita::{
-    ActionRow, Application, ApplicationWindow, ComboRow, HeaderBar, PreferencesGroup,
-    PreferencesPage, ViewStack,
+    ActionRow, Application, ApplicationWindow, ComboRow, HeaderBar, NavigationPage,
+    NavigationSplitView, PreferencesGroup, PreferencesPage, Toast, ToastOverlay, ToolbarView,
+    ViewStack, WindowTitle,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -25,8 +26,8 @@ pub fn build_window(app: &Application) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Zenith")
-        .default_width(940)
-        .default_height(700)
+        .default_width(1100)
+        .default_height(760)
         .build();
 
     let root_box = build_window_content(&window, app, &state, &lang, "dashboard");
@@ -134,109 +135,79 @@ fn build_window_content(
     state: &Rc<RefCell<config::ZenithConfig>>,
     lang: &i18n::Language,
     active_tab: &str,
-) -> Box {
+) -> NavigationSplitView {
     let tr = i18n::get_translations(lang);
     let initial_cfg = state.borrow().clone();
     let shell_cfg = ZenithShellConfig::load_or_default();
 
-    let root_box = Box::new(Orientation::Horizontal, 0);
-
     // ========================================================
-    // Linker Zijbalk (Modern Sidebar Navigation)
+    // Zijbalk: eigen Adwaita-headerbar + gegroepeerde navigatie
     // ========================================================
-    let sidebar = Box::new(Orientation::Vertical, 12);
-    sidebar.add_css_class("zenith-sidebar");
-    sidebar.set_width_request(230);
-
-    // Header Branding
-    let brand_box = Box::new(Orientation::Vertical, 2);
-    brand_box.set_margin_bottom(6);
-
-    let title_lbl = Label::builder()
-        .label("ZENITH")
-        .halign(gtk4::Align::Start)
-        .css_classes(["zenith-brand-title"])
-        .build();
-
-    let sub_lbl = Label::builder()
-        .label("HYPRLAND STUDIO")
-        .halign(gtk4::Align::Start)
-        .css_classes(["zenith-brand-sub"])
-        .build();
-
-    brand_box.append(&title_lbl);
-    brand_box.append(&sub_lbl);
-    sidebar.append(&brand_box);
+    let sidebar = Box::new(Orientation::Vertical, 0);
 
     // Status Pill Badge (Quickshell Daemon Status)
     let qs_pill = Label::builder()
-        .label(format!("● {}", tr.status_active))
         .halign(gtk4::Align::Start)
-        .css_classes(["status-pill-active"])
+        .margin_start(12)
+        .margin_top(6)
+        .margin_bottom(6)
         .build();
-
-    let qs_running = process::is_process_running("quickshell");
-    if qs_running {
-        qs_pill.set_label(&format!("● {}", tr.status_active));
-        qs_pill.set_css_classes(&["status-pill-active"]);
-    } else {
-        qs_pill.set_label(&format!("○ {}", tr.status_inactive));
-        qs_pill.set_css_classes(&["status-pill-inactive"]);
-    }
-
+    let set_pill = {
+        let on = format!("● {}", tr.status_active);
+        let off = format!("○ {}", tr.status_inactive);
+        move |pill: &Label| {
+            if process::is_process_running("quickshell") {
+                pill.set_label(&on);
+                pill.set_css_classes(&["status-pill-active"]);
+            } else {
+                pill.set_label(&off);
+                pill.set_css_classes(&["status-pill-inactive"]);
+            }
+        }
+    };
+    set_pill(&qs_pill);
     let pill_weak = qs_pill.downgrade();
-    let status_active = tr.status_active.clone();
-    let status_inactive = tr.status_inactive.clone();
     gtk4::glib::timeout_add_local(std::time::Duration::from_millis(2000), move || {
         let Some(pill) = pill_weak.upgrade() else {
             return gtk4::glib::ControlFlow::Break;
         };
-        let running = process::is_process_running("quickshell");
-        if running {
-            pill.set_label(&format!("● {}", status_active));
-            pill.set_css_classes(&["status-pill-active"]);
-        } else {
-            pill.set_label(&format!("○ {}", status_inactive));
-            pill.set_css_classes(&["status-pill-inactive"]);
-        }
+        set_pill(&pill);
         gtk4::glib::ControlFlow::Continue
     });
-
     sidebar.append(&qs_pill);
 
-    // Navigatie Lijst in Zijbalk
     let nav_list = ListBox::builder()
         .selection_mode(gtk4::SelectionMode::Single)
-        .css_classes(["sidebar-list"])
-        .margin_top(8)
+        .css_classes(["navigation-sidebar"])
         .build();
 
     struct NavItem {
         id: &'static str,
         title: String,
         icon: &'static str,
+        /// Kopje boven het eerste item van een sectie.
+        section: Option<String>,
         /// `true` voor pagina's die vooral voor power users interessant zijn
         /// en worden verborgen in de "basis"-modus.
         advanced: bool,
     }
 
     let nav_items = [
-        NavItem { id: "dashboard", title: tr.sidebar_dashboard.clone(), icon: "view-grid-symbolic", advanced: false },
-        NavItem { id: "hyprland", title: tr.sidebar_hyprland.clone(), icon: "applications-graphics-symbolic", advanced: false },
-        NavItem { id: "statusbar", title: tr.sidebar_statusbar.clone(), icon: "utilities-terminal-symbolic", advanced: false },
-        NavItem { id: "control_center", title: tr.sidebar_control_center.clone(), icon: "preferences-desktop-keyboard-shortcuts-symbolic", advanced: false },
-        NavItem { id: "keybinds", title: tr.sidebar_keybinds.clone(), icon: "input-keyboard-symbolic", advanced: false },
-        NavItem { id: "osd", title: tr.sidebar_osd.clone(), icon: "video-display-symbolic", advanced: false },
-        NavItem { id: "lockscreen", title: tr.sidebar_lockscreen.clone(), icon: "system-lock-screen-symbolic", advanced: false },
-        NavItem { id: "themes", title: tr.sidebar_themes.clone(), icon: "applications-accessories-symbolic", advanced: false },
-        NavItem { id: "system", title: tr.sidebar_system.clone(), icon: "emblem-system-symbolic", advanced: false },
-        NavItem { id: "backup", title: tr.sidebar_backup.clone(), icon: "folder-download-symbolic", advanced: false },
-        NavItem { id: "icons", title: tr.icons_title.clone(), icon: "emblem-favorite-symbolic", advanced: true },
-        NavItem { id: "fastfetch", title: tr.sidebar_fastfetch.clone(), icon: "utilities-terminal-symbolic", advanced: true },
+        NavItem { id: "dashboard", title: tr.sidebar_dashboard.clone(), icon: "view-grid-symbolic", section: None, advanced: false },
+        NavItem { id: "hyprland", title: tr.sidebar_hyprland.clone(), icon: "preferences-desktop-display-symbolic", section: Some(tr.nav_group_desktop.clone()), advanced: false },
+        NavItem { id: "themes", title: tr.sidebar_themes.clone(), icon: "preferences-desktop-appearance-symbolic", section: None, advanced: false },
+        NavItem { id: "keybinds", title: tr.sidebar_keybinds.clone(), icon: "input-keyboard-symbolic", section: None, advanced: false },
+        NavItem { id: "statusbar", title: tr.sidebar_statusbar.clone(), icon: "view-continuous-symbolic", section: Some(tr.nav_group_shell.clone()), advanced: false },
+        NavItem { id: "control_center", title: tr.sidebar_control_center.clone(), icon: "view-app-grid-symbolic", section: None, advanced: false },
+        NavItem { id: "osd", title: tr.sidebar_osd.clone(), icon: "audio-volume-high-symbolic", section: None, advanced: false },
+        NavItem { id: "lockscreen", title: tr.sidebar_lockscreen.clone(), icon: "system-lock-screen-symbolic", section: None, advanced: false },
+        NavItem { id: "icons", title: tr.icons_title.clone(), icon: "emblem-favorite-symbolic", section: None, advanced: true },
+        NavItem { id: "fastfetch", title: tr.sidebar_fastfetch.clone(), icon: "utilities-terminal-symbolic", section: None, advanced: true },
+        NavItem { id: "system", title: tr.sidebar_system.clone(), icon: "emblem-system-symbolic", section: Some(tr.nav_group_system.clone()), advanced: false },
+        NavItem { id: "backup", title: tr.sidebar_backup.clone(), icon: "document-save-symbolic", section: None, advanced: false },
     ];
 
-    let shell_initial = ZenithShellConfig::load_or_default();
-    let advanced_init = shell_initial.advanced_mode;
+    let advanced_init = shell_cfg.advanced_mode;
     let mut advanced_rows: Vec<gtk4::ListBoxRow> = Vec::new();
 
     for item in &nav_items {
@@ -244,24 +215,11 @@ fn build_window_content(
         row.set_widget_name(item.id);
         row.set_visible(!item.advanced || advanced_init);
 
-        let row_box = Box::new(Orientation::Horizontal, 10);
-        row_box.set_margin_top(4);
-        row_box.set_margin_bottom(4);
-        row_box.set_margin_start(4);
-        row_box.set_margin_end(4);
-
-        let img = Image::from_icon_name(item.icon);
-        img.set_pixel_size(16);
-
-        let lbl = Label::builder()
-            .label(crate::ui::escape::pango_escape(&item.title))
-            .halign(gtk4::Align::Start)
-            .hexpand(true)
-            .build();
-
-        row_box.append(&img);
-        row_box.append(&lbl);
+        let row_box = Box::new(Orientation::Horizontal, 12);
+        row_box.append(&Image::from_icon_name(item.icon));
+        row_box.append(&Label::builder().label(item.title.as_str()).halign(gtk4::Align::Start).hexpand(true).build());
         row.set_child(Some(&row_box));
+
         nav_list.append(&row);
 
         if item.advanced {
@@ -269,36 +227,49 @@ fn build_window_content(
         }
     }
 
-    sidebar.append(&nav_list);
+    // Sectiekopjes via een header-func: GTK wist handmatig gezette headers.
+    let sections: Vec<(&'static str, String)> = nav_items
+        .iter()
+        .filter_map(|i| i.section.clone().map(|s| (i.id, s)))
+        .collect();
+    nav_list.set_header_func(move |row, _| {
+        let header = sections.iter().find(|(id, _)| *id == row.widget_name().as_str()).map(|(_, s)| {
+            Label::builder().label(s.as_str()).halign(gtk4::Align::Start).css_classes(["zenith-nav-header"]).build()
+        });
+        row.set_header(header.as_ref());
+    });
 
-    // ========================================================
-    // Rechter Inhoud (HeaderBar + ViewStack)
-    // ========================================================
-    let content_box = Box::new(Orientation::Vertical, 0);
-    content_box.set_hexpand(true);
-    content_box.set_vexpand(true);
-
-    let header = HeaderBar::new();
-    header.set_show_end_title_buttons(true);
-    let title_center = Label::builder()
-        .label("Zenith Control Center")
-        .css_classes(["title"])
+    let nav_scroll = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vexpand(true)
+        .child(&nav_list)
         .build();
-    header.set_title_widget(Some(&title_center));
+    sidebar.append(&nav_scroll);
 
-    content_box.append(&header);
+    // ========================================================
+    // Inhoud: headerbar met paginatitel + toasts boven de pagina's
+    // ========================================================
+    let page_title = WindowTitle::new(&tr.sidebar_dashboard, "");
+    let header = HeaderBar::new();
+    header.set_title_widget(Some(&page_title));
 
     let stack = ViewStack::new();
     stack.set_hexpand(true);
     stack.set_vexpand(true);
-    content_box.append(&stack);
+    let toasts = ToastOverlay::new();
+    toasts.set_child(Some(&stack));
+
+    let content_view = ToolbarView::new();
+    content_view.add_top_bar(&header);
+    content_view.set_content(Some(&toasts));
+
+    // Instellingen onderaan de zijbalk: taal + modus
+    let prefs_box = Box::new(Orientation::Vertical, 10);
+    prefs_box.add_css_class("zenith-sidebar-footer");
 
     // Language Selector (Direct live UI refresh zonder herstart!)
     let lang_box = Box::new(Orientation::Horizontal, 8);
-    lang_box.set_margin_top(12);
-    lang_box.set_margin_start(12);
-    lang_box.set_margin_end(12);
-    let lang_label = Label::builder().label(&tr.lang_select).halign(gtk4::Align::Start).hexpand(true).build();
+    let lang_label = Label::builder().label(&tr.lang_select).halign(gtk4::Align::Start).hexpand(true).css_classes(["zenith-dim"]).build();
     let lang_model = StringList::new(&["Nederlands", "English", "Deutsch", "Español"]);
     let lang_drop = DropDown::builder().model(&lang_model).build();
     lang_drop.set_selected(match lang {
@@ -345,30 +316,31 @@ fn build_window_content(
 
     lang_box.append(&lang_label);
     lang_box.append(&lang_drop);
-    sidebar.append(&lang_box);
+    prefs_box.append(&lang_box);
 
     // Modus-schakelaar: Basis (gericht) vs Power User (alles zichtbaar)
     let mode_box = Box::new(Orientation::Horizontal, 8);
-    mode_box.set_margin_top(8);
-    mode_box.set_margin_start(12);
-    mode_box.set_margin_end(12);
     let mode_lbl_col = Box::new(Orientation::Vertical, 2);
-    let mode_title = Label::builder()
-        .label(crate::ui::escape::pango_escape(&tr.mode_advanced))
+    mode_lbl_col.set_hexpand(true);
+    mode_lbl_col.append(&Label::builder().label(tr.mode_advanced.as_str()).halign(gtk4::Align::Start).build());
+    mode_lbl_col.append(&Label::builder()
+        .label(tr.mode_advanced_desc.as_str())
         .halign(gtk4::Align::Start)
-        .hexpand(true)
-        .build();
-    let mode_sub = Label::builder()
-        .label(crate::ui::escape::pango_escape(&tr.mode_advanced_desc))
-        .halign(gtk4::Align::Start)
-        .css_classes(["zenith-mode-sub"])
-        .build();
-    mode_lbl_col.append(&mode_title);
-    mode_lbl_col.append(&mode_sub);
+        .wrap(true)
+        .xalign(0.0)
+        .css_classes(["zenith-dim", "caption"])
+        .build());
     let sw_mode = Switch::builder().valign(gtk4::Align::Center).active(advanced_init).build();
     mode_box.append(&mode_lbl_col);
     mode_box.append(&sw_mode);
-    sidebar.append(&mode_box);
+    prefs_box.append(&mode_box);
+
+    prefs_box.append(&Label::builder()
+        .label(format!("Zenith v{}", env!("CARGO_PKG_VERSION")))
+        .halign(gtk4::Align::Start)
+        .css_classes(["zenith-dim", "caption"])
+        .build());
+    sidebar.append(&prefs_box);
 
     let advanced_rows_rc = Rc::new(std::cell::RefCell::new(advanced_rows));
     sw_mode.connect_active_notify(move |sw| {
@@ -382,24 +354,27 @@ fn build_window_content(
         let _ = scfg.save();
     });
 
-    let spacer = Box::new(Orientation::Vertical, 0);
-    spacer.set_vexpand(true);
-    sidebar.append(&spacer);
+    let sidebar_header = HeaderBar::new();
+    sidebar_header.set_title_widget(Some(&WindowTitle::new("Zenith", "Hyprland Studio")));
+    let sidebar_view = ToolbarView::new();
+    sidebar_view.add_top_bar(&sidebar_header);
+    sidebar_view.set_content(Some(&sidebar));
 
-    let footer_lbl = Label::builder()
-        .label("Zenith v2.2 | Arch Linux")
-        .halign(gtk4::Align::Start)
-        .css_classes(["zenith-brand-sub"])
-        .build();
-    sidebar.append(&footer_lbl);
-    root_box.append(&sidebar);
-    root_box.append(&content_box);
+    let split = NavigationSplitView::new();
+    split.set_min_sidebar_width(240.0);
+    split.set_max_sidebar_width(280.0);
+    split.set_sidebar(Some(&NavigationPage::new(&sidebar_view, "Zenith")));
+    split.set_content(Some(&NavigationPage::new(&content_view, "Zenith Control Center")));
 
     let stack_clone = stack.clone();
+    let titles: Vec<(&'static str, String)> = nav_items.iter().map(|i| (i.id, i.title.clone())).collect();
     nav_list.connect_row_selected(move |_, row| {
         if let Some(r) = row {
             let name = r.widget_name();
             stack_clone.set_visible_child_name(&name);
+            if let Some((_, t)) = titles.iter().find(|(id, _)| *id == name.as_str()) {
+                page_title.set_title(t);
+            }
         }
     });
 
@@ -418,8 +393,10 @@ fn build_window_content(
         .subtitle(&tr.dash_cc_sub)
         .build();
     let btn_cc_test = Button::builder().label(format!("🚀 {}", tr.dash_test_cc)).valign(gtk4::Align::Center).build();
-    btn_cc_test.connect_clicked(|_| {
+    let (ov, msg) = (toasts.clone(), format!("{} — {}", tr.dash_test_cc, tr.toast_done));
+    btn_cc_test.connect_clicked(move |_| {
         process::execute_cmd("quickshell ipc call controlCenter toggle");
+        toast(&ov, &msg);
     });
     row_cc_test.add_suffix(&btn_cc_test);
     group_quick.add(&row_cc_test);
@@ -429,8 +406,10 @@ fn build_window_content(
         .subtitle(&tr.dash_osd_sub)
         .build();
     let btn_osd_test = Button::builder().label(format!("🔔 {}", tr.dash_test_osd)).valign(gtk4::Align::Center).build();
-    btn_osd_test.connect_clicked(|_| {
+    let (ov, msg) = (toasts.clone(), format!("{} — {}", tr.dash_test_osd, tr.toast_done));
+    btn_osd_test.connect_clicked(move |_| {
         process::execute_cmd("quickshell ipc call osd popup '⚡' 'Zenith OS' 0.85");
+        toast(&ov, &msg);
     });
     row_osd_test.add_suffix(&btn_osd_test);
     group_quick.add(&row_osd_test);
@@ -440,8 +419,10 @@ fn build_window_content(
         .subtitle(&tr.dash_hypr_sub)
         .build();
     let btn_reload_hypr = Button::builder().label(format!("🔄 {}", tr.dash_reload_hypr)).valign(gtk4::Align::Center).build();
-    btn_reload_hypr.connect_clicked(|_| {
+    let (ov, msg) = (toasts.clone(), format!("{} — {}", tr.dash_reload_hypr, tr.toast_done));
+    btn_reload_hypr.connect_clicked(move |_| {
         process::execute_cmd("hyprctl reload");
+        toast(&ov, &msg);
     });
     row_reload_hypr.add_suffix(&btn_reload_hypr);
     group_quick.add(&row_reload_hypr);
@@ -452,9 +433,11 @@ fn build_window_content(
         .build();
     let btn_restart_bar = Button::builder().label(format!("⚡ {}", tr.dash_restart_bar)).valign(gtk4::Align::Center).build();
     let st_rbar = Rc::clone(state);
+    let (ov, msg) = (toasts.clone(), format!("{} — {}", tr.dash_restart_bar, tr.toast_done));
     btn_restart_bar.connect_clicked(move |_| {
         let active = st_rbar.borrow().active_bar.clone();
         process::set_active_bar(&active);
+        toast(&ov, &msg);
     });
     row_restart_bar.add_suffix(&btn_restart_bar);
     group_quick.add(&row_restart_bar);
@@ -496,7 +479,7 @@ fn build_window_content(
         let btn_on_inner = btn_on_c.clone();
         let btn_off_inner = btn_off_c.clone();
         // Verfris de status na een korte pauze zodat de daemon de wijziging oppikt.
-        gtk4::glib::timeout_add_local(std::time::Duration::from_millis(600), move || {
+        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(600), move || {
             let on = ipc_client::is_daemon_running();
             if on {
                 row_inner.set_subtitle(sub_on_inner.as_str());
@@ -505,7 +488,6 @@ fn build_window_content(
                 row_inner.set_subtitle(sub_off_inner.as_str());
                 btn_inner.set_label(btn_on_inner.as_str());
             }
-            gtk4::glib::ControlFlow::Continue
         });
     });
 
@@ -528,21 +510,23 @@ fn build_window_content(
         process::ZenithDependency::Waybar,
     ];
     for dep in status_keys {
-        let installed = dep.is_installed();
+        if dep.is_installed() {
+            continue; // alleen tonen wat nog ontbreekt; "alles klaar" staat eronder
+        }
         let row = ActionRow::builder()
             .title(dep.title())
-            .subtitle(if installed { tr.onb_installed.clone() } else { tr.onb_install.clone() })
+            .subtitle(tr.onb_install.as_str())
             .build();
-        if !installed {
-            let btn_i = Button::builder().label(&tr.onb_install).valign(gtk4::Align::Center).build();
-            btn_i.connect_clicked(move |_| {
-                match dep {
-                    process::ZenithDependency::Quickshell => process::install_quickshell(),
-                    other => process::install_dependency(other),
-                }
-            });
-            row.add_suffix(&btn_i);
-        }
+        let btn_i = Button::builder().label(&tr.onb_install).valign(gtk4::Align::Center).css_classes(["suggested-action", "pill"]).build();
+        let (ov, msg) = (toasts.clone(), format!("{}: {}…", tr.onb_install, dep.title()));
+        btn_i.connect_clicked(move |_| {
+            match dep {
+                process::ZenithDependency::Quickshell => process::install_quickshell(),
+                other => process::install_dependency(other),
+            }
+            toast(&ov, &msg);
+        });
+        row.add_suffix(&btn_i);
         group_onboard.add(&row);
     }
 
@@ -553,13 +537,12 @@ fn build_window_content(
             .title(&tr.onb_install_all)
             .subtitle(format!("{}: {}", tr.onb_core_status, missing_names.join(", ")))
             .build();
-        let btn_all = Button::builder().label(&tr.onb_install_all).valign(gtk4::Align::Center).build();
+        let btn_all = Button::builder().label(&tr.onb_install_all).valign(gtk4::Align::Center).css_classes(["suggested-action", "pill"]).build();
+        let (ov, msg) = (toasts.clone(), format!("{}…", tr.onb_install_all));
         btn_all.connect_clicked(move |_| {
-            for d in process::ZenithDependency::ALL {
-                if !d.is_installed() {
-                    process::install_dependency(d);
-                }
-            }
+            toast(&ov, &msg);
+            let pkgs: Vec<&str> = process::missing_dependencies().iter().map(|d| d.arch_package()).collect();
+            process::install_packages(&pkgs);
         });
         row_install_all.add_suffix(&btn_all);
         group_onboard.add(&row_install_all);
@@ -581,10 +564,8 @@ fn build_window_content(
         .subtitle("~/.config/quickshell/ — shell.qml, modules, cards")
         .build();
     let btn_power = Button::builder().label(&tr.onb_open_power).valign(gtk4::Align::Center).build();
-    let stack_power = stack.clone();
-    btn_power.connect_clicked(move |_| {
-        stack_power.set_visible_child_name("quickshell");
-    });
+    let nav_power = nav_list.clone();
+    btn_power.connect_clicked(move |_| navigate(&nav_power, "statusbar"));
     row_power.add_suffix(&btn_power);
     group_power.add(&row_power);
 
@@ -594,7 +575,6 @@ fn build_window_content(
 
     let group_dash_bar = PreferencesGroup::builder()
         .title(&tr.sidebar_statusbar)
-        .description(&tr.dash_quick_desc)
         .build();
 
     let bar_model_dash = StringList::new(&["Waybar", "Quickshell", "Geen"]);
@@ -787,8 +767,10 @@ fn build_window_content(
         .subtitle(&tr.palette_glass_sub)
         .build();
     let btn_glass = Button::builder().label(&tr.palette_glass_btn).valign(gtk4::Align::Center).build();
+    let (ov, msg) = (toasts.clone(), format!("{} — {}", tr.palette_glass_title, tr.toast_done));
     btn_glass.connect_clicked(move |_| {
         palette::apply_glassmorphism();
+        toast(&ov, &msg);
     });
     row_glass.add_suffix(&btn_glass);
     group_palette.add(&row_glass);
@@ -878,8 +860,7 @@ fn build_window_content(
     c_btn.set_rgba(&hex_to_rgba(&initial_cfg.active_border_color));
     let st_col = Rc::clone(state);
     c_btn.connect_notify_local(Some("rgba"), move |b, _| {
-        let r = b.rgba();
-        let hex = format!("{:02x}{:02x}{:02x}", (r.red() * 255.0) as u8, (r.green() * 255.0) as u8, (r.blue() * 255.0) as u8);
+        let hex = rgba_to_hex(&b.rgba());
         hyprland::set_active_border_color(&hex);
         st_col.borrow_mut().active_border_color = hex;
         config::save_config(&st_col.borrow());
@@ -1006,25 +987,31 @@ fn build_window_content(
 
             let m_name_c = mon_name.clone();
             let m_strings_c = mode_strings.clone();
+            let st_mon = Rc::clone(state);
             row_res.connect_selected_notify(move |r| {
                 let idx = r.selected() as usize;
                 if let Some(target_mode) = m_strings_c.get(idx) {
-                    hyprland::set_monitor_mode(&m_name_c, target_mode);
+                    let rule = hyprland::set_monitor_mode(&m_name_c, target_mode);
+                    config::upsert_monitor_rule(&mut st_mon.borrow_mut(), rule);
+                    config::save_config(&st_mon.borrow());
                 }
             });
             group_mon.add(&row_res);
 
             let row_scale = ActionRow::builder().title(&tr.hypr_display_scale).subtitle(format!("{:.2}x", mon.scale)).build();
             let s_scale = Scale::with_range(Orientation::Horizontal, 1.0, 2.5, 0.25);
-    s_scale.set_draw_value(false);
+            s_scale.set_draw_value(false);
             s_scale.set_value(mon.scale);
             s_scale.set_width_request(160);
             let r_scl_c = row_scale.clone();
             let m_name_scl = mon_name.clone();
+            let st_scl = Rc::clone(state);
             s_scale.connect_value_changed(move |s| {
                 let v = s.value();
                 r_scl_c.set_subtitle(&format!("{:.2}x", v));
-                hyprland::set_monitor_scale(&m_name_scl, v);
+                let rule = hyprland::set_monitor_scale(&m_name_scl, v);
+                config::upsert_monitor_rule(&mut st_scl.borrow_mut(), rule);
+                config::save_config(&st_scl.borrow());
             });
             row_scale.add_suffix(&s_scale);
             group_mon.add(&row_scale);
@@ -1084,8 +1071,7 @@ fn build_window_content(
     c_wb_btn.set_rgba(&hex_to_rgba(&initial_cfg.waybar_bg_color));
     let st_wb_bg = Rc::clone(state);
     c_wb_btn.connect_notify_local(Some("rgba"), move |b, _| {
-        let r = b.rgba();
-        let hex = format!("{:02x}{:02x}{:02x}", (r.red() * 255.0) as u8, (r.green() * 255.0) as u8, (r.blue() * 255.0) as u8);
+        let hex = rgba_to_hex(&b.rgba());
         let op = st_wb_bg.borrow().waybar_opacity;
         let rnd = st_wb_bg.borrow().waybar_rounding;
         waybar::update_style(&hex, op, rnd);
@@ -1154,8 +1140,7 @@ fn build_window_content(
     btn_k_bg.set_rgba(&hex_to_rgba(&initial_cfg.kitty_bg));
     let st_k_bg = Rc::clone(state);
     btn_k_bg.connect_notify_local(Some("rgba"), move |b, _| {
-        let r = b.rgba();
-        let hex = format!("{:02x}{:02x}{:02x}", (r.red() * 255.0) as u8, (r.green() * 255.0) as u8, (r.blue() * 255.0) as u8);
+        let hex = rgba_to_hex(&b.rgba());
         let fg = st_k_bg.borrow().kitty_fg.clone();
         let op = st_k_bg.borrow().kitty_opacity;
         let fs = st_k_bg.borrow().kitty_font_size;
@@ -1215,8 +1200,7 @@ fn build_window_content(
     btn_r_bg.set_rgba(&hex_to_rgba(&initial_cfg.rofi_bg));
     let st_r_bg = Rc::clone(state);
     btn_r_bg.connect_notify_local(Some("rgba"), move |b, _| {
-        let r = b.rgba();
-        let hex = format!("{:02x}{:02x}{:02x}", (r.red() * 255.0) as u8, (r.green() * 255.0) as u8, (r.blue() * 255.0) as u8);
+        let hex = rgba_to_hex(&b.rgba());
         let fg = st_r_bg.borrow().rofi_fg.clone();
         let op = st_r_bg.borrow().rofi_opacity;
         let rnd = st_r_bg.borrow().rofi_rounding;
@@ -1356,26 +1340,26 @@ fn build_window_content(
         .title(&tr.common_apply)
         .subtitle(&tr.theme_apply)
         .build();
-    let btn_apply = Button::builder().label(&tr.theme_apply).valign(gtk4::Align::Center).build();
+    let btn_apply = Button::builder().label(&tr.theme_apply).valign(gtk4::Align::Center).css_classes(["suggested-action", "pill"]).build();
     let st_apply = Rc::clone(state);
-    let common_apply_label = tr.common_apply.clone();
-    btn_apply.connect_clicked(move |b| {
+    let (ov, msg) = (toasts.clone(), format!("{} — {}", tr.theme_apply, tr.toast_done));
+    btn_apply.connect_clicked(move |_| {
         config::save_config(&st_apply.borrow());
         themes::update_quickshell(&st_apply.borrow());
         waybar::reload_waybar();
-        b.set_label(&common_apply_label);
+        toast(&ov, &msg);
     });
     row_apply.add_suffix(&btn_apply);
     group_apply.add(&row_apply);
     page_themes.add(&group_apply);
 
-    stack.add_titled(&page_themes, Some("themes"), &crate::ui::escape::pango_escape(&tr.sidebar_themes));
+    stack.add_titled(&page_themes, Some("themes"), &tr.sidebar_themes);
 
     // ========================================================
     // PAGINA 7: Iconen & Emoji's
     // ========================================================
     let page_icons = crate::ui::icon_studio::build_icon_studio_page(&tr);
-    stack.add_titled(&page_icons, Some("icons"), &crate::ui::escape::pango_escape(&tr.icons_title));
+    stack.add_titled(&page_icons, Some("icons"), &tr.icons_title);
 
     // ========================================================
     // PAGINA 8: Fastfetch Visual Studio
@@ -1475,7 +1459,9 @@ fn build_window_content(
     let group_sys = PreferencesGroup::builder().title(crate::ui::escape::pango_escape(&tr.sidebar_system)).build();
 
     let row_dnd = ActionRow::builder().title(&tr.sys_dnd_title).subtitle(&tr.sys_dnd_sub).build();
-    let sw_dnd = Switch::builder().valign(gtk4::Align::Center).build();
+    let dnd_paused = std::process::Command::new("dunstctl").arg("is-paused").output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true").unwrap_or(false);
+    let sw_dnd = Switch::builder().valign(gtk4::Align::Center).active(dnd_paused).build();
     sw_dnd.connect_state_set(|_, active| {
         process::toggle_dunst_dnd(active);
         gtk4::glib::Propagation::Proceed
@@ -1483,39 +1469,6 @@ fn build_window_content(
     row_dnd.add_suffix(&sw_dnd);
     group_sys.add(&row_dnd);
 
-    let row_wall = ActionRow::builder()
-        .title(tr.dash_wallpaper.as_str())
-        .subtitle(if current_wp.is_empty() { &tr.dash_wallpaper_sub } else { &current_wp })
-        .build();
-    let btn_wall = Button::builder().label(&tr.dash_choose_file).valign(gtk4::Align::Center).build();
-    let r_wall_sys = row_wall.clone();
-    let choose_wall_sys_title = tr.dash_choose_wallpaper_title.clone();
-    btn_wall.connect_clicked(move |_| {
-        let fd = FileDialog::builder().title(&choose_wall_sys_title).build();
-        let r_cl2 = r_wall_sys.clone();
-        fd.open(None::<&gtk4::Window>, None::<&gtk4::gio::Cancellable>, move |res| {
-            if let Ok(file) = res {
-                if let Some(path) = file.path() {
-                    if let Some(p_str) = path.to_str() {
-                        if is_valid_image(p_str) {
-                            hyprland::set_wallpaper(p_str);
-                            r_cl2.set_subtitle(p_str);
-                            let mut scfg = ZenithShellConfig::load_or_default();
-                            scfg.wallpaper_path = p_str.to_string();
-                            let _ = scfg.save();
-                            if scfg.auto_palette {
-                                if let Some(pal) = palette::extract_palette(p_str) {
-                                    palette::apply_palette(&pal);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    });
-    row_wall.add_suffix(&btn_wall);
-    group_sys.add(&row_wall);
     page_system.add(&group_sys);
 
     // Toetsenbord sneltoetsen
@@ -1528,12 +1481,7 @@ fn build_window_content(
     let cfg_path_home = std::env::var("HOME").unwrap_or_default();
     let hypr_conf_path = std::path::PathBuf::from(&cfg_path_home).join(".config/hypr/hyprland.conf");
     btn_keys.connect_clicked(move |_| {
-        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "xdg-open".to_string());
-        process::execute_cmd(&format!(
-            "{} {} &",
-            editor,
-            hypr_conf_path.to_string_lossy()
-        ));
+        let _ = std::process::Command::new("xdg-open").arg(&hypr_conf_path).spawn();
     });
     row_keys.add_suffix(&btn_keys);
     group_keys.add(&row_keys);
@@ -1552,52 +1500,11 @@ fn build_window_content(
     }
     let autostart_dir_clone = autostart_dir.clone();
     btn_autostart.connect_clicked(move |_| {
-        process::execute_cmd(&format!("xdg-open '{}' &", autostart_dir_clone.to_string_lossy()));
+        let _ = std::process::Command::new("xdg-open").arg(&autostart_dir_clone).spawn();
     });
     row_autostart.add_suffix(&btn_autostart);
     group_autostart.add(&row_autostart);
     page_system.add(&group_autostart);
-
-    // Monitor configuratie
-    let group_monitor = PreferencesGroup::builder().title(&tr.sys_monitor).build();
-    let mon_count = hyprland::get_monitors().len();
-    let row_monitor = ActionRow::builder()
-        .title(&tr.sys_monitor)
-        .subtitle(format!("{} {}", mon_count, tr.hypr_display))
-        .build();
-    let btn_monitor = Button::builder()
-        .label(tr.hypr_display.as_str())
-        .valign(gtk4::Align::Center)
-        .build();
-    let stack_to_monitor = stack.clone();
-    btn_monitor.connect_clicked(move |_| {
-        stack_to_monitor.set_visible_child_name("hyprland");
-    });
-    row_monitor.add_suffix(&btn_monitor);
-    group_monitor.add(&row_monitor);
-    page_system.add(&group_monitor);
-
-    // Back-up & Herstel (snelkoppeling naar de back-up-pagina)
-    let group_backup = PreferencesGroup::builder()
-        .title(crate::ui::escape::pango_escape(&tr.sidebar_backup))
-        .description(crate::ui::escape::pango_escape(&tr.bk_create_desc))
-        .build();
-    let row_backup = ActionRow::builder()
-        .title(crate::ui::escape::pango_escape(&tr.sidebar_backup))
-        .subtitle(format!("{} — {}", tr.bk_create_title, tr.bk_create_desc))
-        .build();
-    let btn_backup = Button::builder()
-        .label("🔄")
-        .valign(gtk4::Align::Center)
-        .tooltip_text(crate::ui::escape::pango_escape(&tr.bk_action_sub))
-        .build();
-    let stack_to_backup = stack.clone();
-    btn_backup.connect_clicked(move |_| {
-        stack_to_backup.set_visible_child_name("backup");
-    });
-    row_backup.add_suffix(&btn_backup);
-    group_backup.add(&row_backup);
-    page_system.add(&group_backup);
 
     // Over Zenith
     let group_about = PreferencesGroup::builder().title(&tr.sys_about).build();
@@ -1608,13 +1515,13 @@ fn build_window_content(
     group_about.add(&row_about);
     page_system.add(&group_about);
 
-    stack.add_titled(&page_system, Some("system"), &crate::ui::escape::pango_escape(&tr.sidebar_system));
+    stack.add_titled(&page_system, Some("system"), &tr.sidebar_system);
 
     // ========================================================
     // PAGINA: Back-up & Herstel
     // ========================================================
     let page_backup = crate::ui::backup_designer::build_backup_page(&tr);
-    stack.add_titled(&page_backup, Some("backup"), &crate::ui::escape::pango_escape(&tr.sidebar_backup));
+    stack.add_titled(&page_backup, Some("backup"), &tr.sidebar_backup);
 
     // Selecteer initiële pagina in de zijbalk
     let mut selected_index = 0;
@@ -1629,7 +1536,32 @@ fn build_window_content(
         stack.set_visible_child_name(active_tab);
     }
 
-    root_box
+    split
+}
+
+/// Korte bevestiging onderin het venster, zodat elke actie zichtbaar feedback geeft.
+fn toast(overlay: &ToastOverlay, msg: &str) {
+    let t = Toast::new(msg);
+    t.set_timeout(2);
+    overlay.add_toast(t);
+}
+
+fn rgba_to_hex(c: &RGBA) -> String {
+    let ch = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!("{:02x}{:02x}{:02x}", ch(c.red()), ch(c.green()), ch(c.blue()))
+}
+
+/// Navigeer via de zijbalk zodat selectie en pagina altijd synchroon blijven.
+fn navigate(nav_list: &ListBox, id: &str) {
+    let mut i = 0;
+    while let Some(row) = nav_list.row_at_index(i) {
+        if row.widget_name() == id {
+            row.set_visible(true);
+            nav_list.select_row(Some(&row));
+            return;
+        }
+        i += 1;
+    }
 }
 
 fn hex_to_rgba(hex: &str) -> RGBA {

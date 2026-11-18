@@ -12,3 +12,7 @@ pub mod process;
 pub mod shell_config;
 pub mod themes;
 pub mod waybar;
+
+/// Tests die `HOME` omzetten draaien parallel; deze lock serialiseert ze.
+#[cfg(test)]
+pub static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

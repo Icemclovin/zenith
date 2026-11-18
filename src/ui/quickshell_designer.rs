@@ -492,12 +492,12 @@ pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translation
         .subtitle("~/.config/quickshell/modules  —  elke .qml die je hierin plaatst is meteen beschikbaar")
         .build();
     let btn_modules = Button::builder()
-        .label(crate::ui::escape::pango_escape(&tr.common_open_folder).as_str())
+        .label(tr.common_open_folder.as_str())
         .valign(gtk4::Align::Center)
         .build();
     let modules_dir = ZenithShellConfig::modules_dir().unwrap_or_default();
     btn_modules.connect_clicked(move |_| {
-        process::execute_cmd(&format!("xdg-open '{}' &", modules_dir.to_string_lossy()));
+        let _ = std::process::Command::new("xdg-open").arg(&modules_dir).spawn();
     });
     row_modules.add_suffix(&btn_modules);
     group_freedom.add(&row_modules);

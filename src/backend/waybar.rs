@@ -36,8 +36,10 @@ pub fn update_config(position: &str, height: i32) {
                 obj.insert("height".to_string(), serde_json::Value::Number(height.into()));
 
                 if let Ok(serialized) = serde_json::to_string_pretty(&val) {
-                    if let Ok(mut f) = File::create(&config_path) {
-                        let _ = f.write_all(serialized.as_bytes());
+                    // Atomair: een half geschreven config laat Waybar crashen bij herladen.
+                    let tmp = config_path.with_extension("tmp");
+                    if std::fs::write(&tmp, serialized).is_ok() {
+                        let _ = std::fs::rename(&tmp, &config_path);
                     }
                 }
             }

@@ -312,7 +312,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     row_click.add_suffix(&entry_card_click);
     group_custom_card.add(&row_click);
 
-    let btn_create_card = Button::builder().label(crate::ui::escape::pango_escape(&tr.cc_create_card)).valign(gtk4::Align::Center).build();
+    let btn_create_card = Button::builder().label(tr.cc_create_card.as_str()).valign(gtk4::Align::Center).build();
     btn_create_card.add_css_class("suggested-action");
     {
         let sh_st = Rc::clone(&shell_state);

@@ -1,216 +1,164 @@
 /* ========================================================
-   Zenith Control Center - Custom Hyprland Dark Theme
-   Minimalist, Arch & Hyprland Cyber Aesthetic
+   Zenith Control Center — donker thema
+   Het palet loopt via Adwaita's kleurvariabelen, zodat rijen, kaarten,
+   schakelaars, popovers en de zijbalk automatisch consistent zijn.
    ======================================================== */
 
-window {
-    background-color: #0f0f17;
-    color: #cdd6f4;
-    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', 'Fira Code', 'Cantarell', sans-serif;
+@define-color accent_color #89b4fa;
+@define-color accent_bg_color #89b4fa;
+@define-color accent_fg_color #11111b;
+
+@define-color window_bg_color #11111b;
+@define-color window_fg_color #cdd6f4;
+@define-color view_bg_color #181825;
+@define-color view_fg_color #cdd6f4;
+
+@define-color headerbar_bg_color #11111b;
+@define-color headerbar_fg_color #cdd6f4;
+@define-color headerbar_backdrop_color #11111b;
+@define-color headerbar_shade_color rgba(0, 0, 0, 0.36);
+
+@define-color sidebar_bg_color #181825;
+@define-color sidebar_fg_color #cdd6f4;
+@define-color sidebar_backdrop_color #181825;
+@define-color sidebar_shade_color rgba(0, 0, 0, 0.36);
+
+@define-color card_bg_color #1e1e2e;
+@define-color card_fg_color #cdd6f4;
+@define-color card_shade_color rgba(0, 0, 0, 0.36);
+
+@define-color popover_bg_color #1e1e2e;
+@define-color popover_fg_color #cdd6f4;
+@define-color dialog_bg_color #1e1e2e;
+@define-color dialog_fg_color #cdd6f4;
+
+@define-color destructive_color #f38ba8;
+@define-color destructive_bg_color #f38ba8;
+@define-color destructive_fg_color #11111b;
+@define-color success_color #a6e3a1;
+@define-color success_bg_color #a6e3a1;
+@define-color warning_color #f9e2af;
+@define-color error_color #f38ba8;
+
+/* libadwaita >= 1.6 leest CSS-variabelen in plaats van @define-color. */
+:root {
+    --accent-color: #89b4fa;
+    --accent-bg-color: #89b4fa;
+    --accent-fg-color: #11111b;
+    --window-bg-color: #11111b;
+    --window-fg-color: #cdd6f4;
+    --view-bg-color: #181825;
+    --view-fg-color: #cdd6f4;
+    --headerbar-bg-color: #11111b;
+    --headerbar-fg-color: #cdd6f4;
+    --headerbar-backdrop-color: #11111b;
+    --sidebar-bg-color: #181825;
+    --sidebar-fg-color: #cdd6f4;
+    --sidebar-backdrop-color: #181825;
+    --card-bg-color: #1e1e2e;
+    --card-fg-color: #cdd6f4;
+    --popover-bg-color: #1e1e2e;
+    --popover-fg-color: #cdd6f4;
+    --dialog-bg-color: #1e1e2e;
+    --dialog-fg-color: #cdd6f4;
+    --destructive-color: #f38ba8;
+    --destructive-bg-color: #f38ba8;
+    --destructive-fg-color: #11111b;
+    --success-color: #a6e3a1;
+    --success-bg-color: #a6e3a1;
+    --warning-color: #f9e2af;
+    --error-color: #f38ba8;
 }
 
-/* Linker Zijbalk */
-.zenith-sidebar {
-    background-color: #13131f;
-    border-right: 1px solid #232433;
-    padding: 16px 12px;
-}
-
-.zenith-brand-title {
-    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
-    font-weight: 800;
-    font-size: 18px;
-    color: #89b4fa;
-    letter-spacing: 0.5px;
-}
-
-.zenith-brand-sub {
-    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: #6c7086;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-top: 2px;
-}
-
-/* Status Pill Badge */
-.status-pill-active {
-    background-color: rgba(166, 227, 161, 0.12);
-    border: 1px solid rgba(166, 227, 161, 0.40);
-    color: #a6e3a1;
-    border-radius: 9999px;
-    padding: 3px 10px;
-    font-size: 10.5px;
-    font-weight: bold;
-    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
-}
-
-.status-pill-inactive {
-    background-color: rgba(243, 139, 168, 0.12);
-    border: 1px solid rgba(243, 139, 168, 0.40);
-    color: #f38ba8;
-    border-radius: 9999px;
-    padding: 3px 10px;
-    font-size: 10.5px;
-    font-weight: bold;
-    font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
-}
-
-/* Navigatie Knoppen in de Zijbalk */
-.sidebar-list {
-    background: transparent;
-}
-
-.sidebar-list row {
-    background: transparent;
+/* --- Zijbalk ------------------------------------------------------- */
+.navigation-sidebar row {
     border-radius: 8px;
-    margin: 2px 0;
-    padding: 8px 12px;
-    transition: all 150ms cubic-bezier(0.25, 1, 0.5, 1);
-    color: #a6adc8;
-    font-weight: 500;
-    font-size: 13px;
-    border: 1px solid transparent;
+    margin: 1px 6px;
+    padding: 8px 10px;
 }
 
-.sidebar-list row:hover {
-    background-color: rgba(137, 180, 250, 0.08);
-    color: #cdd6f4;
-    border-color: rgba(137, 180, 250, 0.15);
+.zenith-nav-header {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: alpha(@window_fg_color, 0.45);
+    margin: 14px 18px 4px 18px;
 }
 
-.sidebar-list row:selected {
-    background-color: rgba(137, 180, 250, 0.16);
-    color: #89b4fa;
-    border: 1px solid rgba(137, 180, 250, 0.45);
-    box-shadow: 0 0 10px rgba(137, 180, 250, 0.15);
+.zenith-sidebar-footer {
+    padding: 12px 14px 14px 14px;
+    border-top: 1px solid alpha(@window_fg_color, 0.08);
+}
+
+.status-pill-active,
+.status-pill-inactive {
+    border-radius: 9999px;
+    padding: 3px 10px;
+    font-size: 11px;
     font-weight: 700;
 }
 
-/* Kaarten en Boxed Lists */
-.boxed-list, list.boxed-list {
-    background-color: #181825;
-    border: 1px solid #313244;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+.status-pill-active {
+    background-color: alpha(@success_color, 0.12);
+    color: @success_color;
 }
 
-.boxed-list row {
-    border-bottom: 1px solid #232433;
-    padding: 10px 14px;
+.status-pill-inactive {
+    background-color: alpha(@error_color, 0.12);
+    color: @error_color;
 }
 
-.boxed-list row:last-child {
-    border-bottom: none;
+/* --- Inhoud -------------------------------------------------------- */
+preferencespage > scrolledwindow > viewport > clamp > box {
+    margin-top: 12px;
 }
 
-/* Sliders */
-scale trough {
-    background-color: #313244;
-    border-radius: 6px;
-    min-height: 6px;
+scale {
+    min-width: 180px;
 }
 
-scale highlight {
-    background-color: #89b4fa;
-    border-radius: 6px;
+.zenith-section-title {
+    font-weight: 700;
 }
 
-scale slider {
-    background-color: #cdd6f4;
-    border-radius: 50%;
-    min-width: 14px;
-    min-height: 14px;
-    box-shadow: 0 0 6px rgba(137, 180, 250, 0.4);
+.zenith-dim {
+    color: alpha(@window_fg_color, 0.55);
 }
 
-/* Knoppen */
-button.suggested-action {
-    background: linear-gradient(135deg, #89b4fa, #74c7ec);
-    color: #11111b;
-    font-weight: bold;
-    border-radius: 8px;
-    border: none;
-    box-shadow: 0 2px 8px rgba(137, 180, 250, 0.3);
-    transition: all 120ms ease-out;
+.zenith-status-ok {
+    color: @success_color;
 }
 
-button.suggested-action:hover {
-    box-shadow: 0 0 14px rgba(137, 180, 250, 0.55);
-}
-
-button.destructive-action {
-    background-color: rgba(243, 139, 168, 0.15);
-    color: #f38ba8;
-    border: 1px solid rgba(243, 139, 168, 0.35);
-    border-radius: 8px;
-}
-
-button.destructive-action:hover {
-    background-color: rgba(243, 139, 168, 0.28);
-    box-shadow: 0 0 10px rgba(243, 139, 168, 0.35);
-}
-
-/* Headerbar */
-headerbar {
-    background-color: #0f0f17;
-    border-bottom: 1px solid #232433;
-    color: #cdd6f4;
-}
-
-/* Zoek/Invoervelden */
-entry {
-    background-color: #181825;
-    border: 1px solid #313244;
-    color: #cdd6f4;
-    border-radius: 8px;
-    padding: 6px 10px;
+.fastfetch-preview {
     font-family: 'JetBrains Mono Nerd Font', 'JetBrains Mono', monospace;
 }
 
-entry:focus {
-    border-color: #89b4fa;
-    box-shadow: 0 0 8px rgba(137, 180, 250, 0.3);
-}
-
-/* ========================================================
-   Zen.. Drag-and-Drop-Canvas + Tool Hub
-   ======================================================== */
+/* --- Drag-and-drop canvas (statusbalk) ------------------------------ */
 .zenith-canvas {
-    background-color: rgba(24, 24, 37, 0.55);
-    border: 1px dashed #3a3b55;
+    background-color: alpha(@card_bg_color, 0.6);
+    border: 1px dashed alpha(@window_fg_color, 0.18);
     border-radius: 14px;
-    padding: 10px 12px;
+    padding: 12px;
 }
 
 .zenith-drop-zone {
-    background-color: rgba(30, 30, 46, 0.55);
-    border: 1px solid #313244;
+    background-color: @card_bg_color;
+    border: 1px solid alpha(@window_fg_color, 0.08);
     border-radius: 10px;
     padding: 8px;
+    transition: border-color 150ms ease-out;
+}
+
+.zenith-drop-zone:drop(active) {
+    border-color: @accent_color;
 }
 
 .zenith-drop-label {
-    font-weight: bold;
-    color: #a5adc9;
+    font-weight: 700;
+    color: alpha(@window_fg_color, 0.7);
 }
 
 .zenith-drag-chip {
     border-radius: 8px;
     padding: 4px 10px;
-    background-color: #222333;
-}
-
-.zenith-section-title {
-    font-weight: bold;
-    font-size: 13px;
-    color: #cdd6f4;
-}
-
-.zenith-dim {
-    color: #8a93b3;
-}
-
-.zenith-status-ok {
-    color: #a6e3a1;
 }

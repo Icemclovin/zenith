@@ -116,24 +116,26 @@ pub fn get_monitors() -> Vec<MonitorInfo> {
     Vec::new()
 }
 
-/// Past de monitorconfiguratie direct live toe
-pub fn apply_monitor_rule(name: &str, res_hz: &str, scale: f64) {
+/// Past de monitorconfiguratie direct live toe en geeft de regel terug
+/// zodat de aanroeper hem in zenith.conf kan bewaren.
+pub fn apply_monitor_rule(name: &str, res_hz: &str, scale: f64) -> String {
     let rule = format!("{},{},auto,{:.2}", name, res_hz, scale);
     let _ = Command::new("hyprctl")
         .args(["keyword", "monitor", &rule])
         .spawn();
+    rule
 }
 
-pub fn set_monitor_mode(name: &str, mode: &str) {
+pub fn set_monitor_mode(name: &str, mode: &str) -> String {
     let monitors = get_monitors();
     let scale = monitors.iter().find(|m| m.name == name).map(|m| m.scale).unwrap_or(1.0);
-    apply_monitor_rule(name, mode, scale);
+    apply_monitor_rule(name, mode, scale)
 }
 
-pub fn set_monitor_scale(name: &str, scale: f64) {
+pub fn set_monitor_scale(name: &str, scale: f64) -> String {
     let monitors = get_monitors();
     let mode = monitors.iter().find(|m| m.name == name)
         .map(|m| format!("{}x{}@{:.2}Hz", m.width, m.height, m.refresh_rate))
         .unwrap_or_else(|| "preferred".to_string());
-    apply_monitor_rule(name, &mode, scale);
+    apply_monitor_rule(name, &mode, scale)
 }

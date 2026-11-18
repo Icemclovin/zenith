@@ -193,26 +193,45 @@ fn broker_path() -> String {
     String::new()
 }
 
-/// Start een installatie van een tool (async, via de privileged broker).
-/// De voortgang leest de GUI uit via `read_status(log_path(key))`.
+/// Start een installatie van een tool (async). De voortgang leest de GUI uit
+/// via `read_status(log_path(key))`; beide paden schrijven naar dat logbestand.
 pub fn spawn_install(item: &ToolHubItem) -> bool {
+    let log = log_path(&item.key);
+    let _ = std::fs::remove_file(&log); // oude "STATUS done" van een vorige run niet meelezen
     let broker = broker_path();
-    if broker.is_empty() {
-        // Broker niet gevonden: val terug op de klassieke pkexec-pacman-pad.
-        let names: Vec<&str> = item.packages.iter().map(|p| p.as_str()).collect::<Vec<&str>>();
-        crate::backend::process::install_packages(&names);
-        return true;
-    }
-
-    let joined = item.packages.join(" ");
-    let script = format!("{} install {}", broker, joined);
-    let _ = std::process::Command::new("bash")
-        .arg("-c")
-        .arg(script.as_str())
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+    // Pakketnamen als losse argumenten, nooit via een shell (blueprints zijn gebruikersinvoer).
+    let child = if broker.is_empty() {
+        let installer = if is_command_available("pkexec") { "pkexec" } else { "sudo" };
+        let _ = std::fs::write(&log, "STATUS installing\n");
+        std::process::Command::new(installer)
+            .args(["pacman", "-S", "--noconfirm", "--needed"])
+            .args(&item.packages)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+    } else {
+        std::process::Command::new(&broker)
+            .arg("install")
+            .args(&item.packages)
+            .env("ZENITH_TOOLHUB_LOG", &log)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+    };
+    let Ok(mut child) = child else {
+        let _ = std::fs::write(&log, "STATUS failed\n");
+        return false;
+    };
+    let direct = broker.is_empty();
+    std::thread::spawn(move || {
+        let ok = child.wait().map(|s| s.success()).unwrap_or(false);
+        // De broker schrijft zelf zijn eindstatus; alleen het directe pad heeft hulp nodig.
+        if direct {
+            let _ = std::fs::write(&log, if ok { "STATUS done\n" } else { "STATUS failed\n" });
+        }
+    });
     true
 }
 

@@ -42,6 +42,10 @@ impl fmt::Display for Language {
 pub struct Translations {
     // SIDEBAR
     pub sidebar_dashboard: String,
+    pub nav_group_desktop: String,
+    pub nav_group_shell: String,
+    pub nav_group_system: String,
+    pub toast_done: String,
     pub sidebar_hyprland: String,
     pub sidebar_statusbar: String,
     pub sidebar_control_center: String,
@@ -320,6 +324,10 @@ pub fn get_translations(lang: &Language) -> Translations {
     match lang {
         Language::Nl => Translations {
             sidebar_dashboard: "Dashboard".to_string(),
+            nav_group_desktop: "Desktop".to_string(),
+            nav_group_shell: "Shell".to_string(),
+            nav_group_system: "Systeem".to_string(),
+            toast_done: "Uitgevoerd".to_string(),
             sidebar_hyprland: "Hyprland".to_string(),
             sidebar_statusbar: "Statusbalk".to_string(),
             sidebar_control_center: "Control Center".to_string(),
@@ -548,6 +556,10 @@ pub fn get_translations(lang: &Language) -> Translations {
         },
         Language::En => Translations {
             sidebar_dashboard: "Dashboard".to_string(),
+            nav_group_desktop: "Desktop".to_string(),
+            nav_group_shell: "Shell".to_string(),
+            nav_group_system: "System".to_string(),
+            toast_done: "Done".to_string(),
             sidebar_hyprland: "Hyprland".to_string(),
             sidebar_statusbar: "Status Bar".to_string(),
             sidebar_control_center: "Control Center".to_string(),
@@ -776,6 +788,10 @@ pub fn get_translations(lang: &Language) -> Translations {
         },
         Language::De => Translations {
             sidebar_dashboard: "Dashboard".to_string(),
+            nav_group_desktop: "Desktop".to_string(),
+            nav_group_shell: "Shell".to_string(),
+            nav_group_system: "System".to_string(),
+            toast_done: "Erledigt".to_string(),
             sidebar_hyprland: "Hyprland".to_string(),
             sidebar_statusbar: "Statusleiste".to_string(),
             sidebar_control_center: "Kontrollzentrum".to_string(),
@@ -1004,6 +1020,10 @@ pub fn get_translations(lang: &Language) -> Translations {
         },
         Language::Es => Translations {
             sidebar_dashboard: "Panel".to_string(),
+            nav_group_desktop: "Escritorio".to_string(),
+            nav_group_shell: "Shell".to_string(),
+            nav_group_system: "Sistema".to_string(),
+            toast_done: "Hecho".to_string(),
             sidebar_hyprland: "Hyprland".to_string(),
             sidebar_statusbar: "Barra de estado".to_string(),
             sidebar_control_center: "Centro de control".to_string(),
@@ -1279,6 +1299,7 @@ mod tests {
             
             assert_fields_not_empty!(
                 t,
+                nav_group_desktop, nav_group_shell, nav_group_system, toast_done,
                 sidebar_dashboard, sidebar_hyprland, sidebar_statusbar, sidebar_control_center, sidebar_osd, sidebar_themes, sidebar_system,
                 status_active, status_inactive,
                 dash_quick_controls, dash_test_cc, dash_test_osd, dash_reload_hypr, dash_restart_bar, dash_active_bar, dash_wallpaper, dash_choose_file,

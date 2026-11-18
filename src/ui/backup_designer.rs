@@ -54,7 +54,7 @@ pub fn build_backup_page(tr: &Translations) -> PreferencesPage {
     group_create.add(&row_status);
 
     let btn_create = Button::builder()
-        .label(pango_escape(&tr.bk_create_btn).as_str())
+        .label(tr.bk_create_btn.as_str())
         .valign(gtk4::Align::Center)
         .build();
     let row_create = ActionRow::builder()

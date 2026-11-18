@@ -10,8 +10,7 @@ fn write_text_atomic_owned(
     content: &str,
 ) -> Result<(), std::io::Error> {
     std::fs::write(tmp, content)?;
-    let _ = std::fs::rename(tmp, final_path);
-    Ok(())
+    std::fs::rename(tmp, final_path)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -967,6 +966,7 @@ mod tests {
     #[test]
     fn test_save_writes_atomically() {
         // Gebruik een tijdelijke HOME zodat de echte gebruikersconfig niet geraakt wordt.
+        let _guard = crate::backend::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let fake_home = std::path::PathBuf::from("/tmp/zenith-atomic-save-home");
         std::env::set_var("HOME", &fake_home);
 

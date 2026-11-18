@@ -244,6 +244,13 @@ pub fn load_config() -> ZenithConfig {
     cfg
 }
 
+/// Vervangt (of voegt toe) de monitor-regel voor de monitor waar `rule` mee begint.
+pub fn upsert_monitor_rule(cfg: &mut ZenithConfig, rule: String) {
+    let name = rule.split(',').next().unwrap_or("").trim().to_string();
+    cfg.monitor_rules.retain(|r| r.split(',').next().unwrap_or("").trim() != name);
+    cfg.monitor_rules.push(rule);
+}
+
 fn parse_i32(line: &str, prefix: &str) -> Option<i32> {
     line.strip_prefix(prefix).and_then(|s| s.trim().parse::<i32>().ok())
 }
@@ -260,7 +267,8 @@ fn parse_bool(line: &str, prefix: &str) -> Option<bool> {
 pub fn save_config(cfg: &ZenithConfig) {
     if let Some(path) = get_config_path() {
         if let Some(parent) = path.parent() { let _ = create_dir_all(parent); }
-        if let Ok(mut f) = File::create(path) {
+        let tmp = path.with_extension("conf.tmp");
+        if let Ok(mut f) = File::create(&tmp) {
             let launcher_cmd = if cfg.default_launcher == "wofi" { "wofi --show drun" } else { "rofi -show drun" };
 
             let mut monitor_lines = String::new();
@@ -335,7 +343,7 @@ pub fn save_config(cfg: &ZenithConfig) {
                 $zenith_qs_show_power_btn = {}\n\n\
                 # Window Rules voor Zenith Control Center\n\
                 windowrulev2 = float, class:^(org.zenith.control)$\n\
-                windowrulev2 = size 940 700, class:^(org.zenith.control)$\n\
+                windowrulev2 = size 1100 760, class:^(org.zenith.control)$\n\
                 windowrulev2 = center, class:^(org.zenith.control)$\n\n\
                 # Autostart actieve statusbalk beheerd door Zenith\n\
                 {}\n\n\
@@ -387,7 +395,25 @@ pub fn save_config(cfg: &ZenithConfig) {
                 },
                 cfg.default_terminal, launcher_cmd
             );
-            let _ = f.write_all(content.as_bytes());
+            if f.write_all(content.as_bytes()).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upsert_monitor_rule_replaces_same_monitor() {
+        let mut cfg = ZenithConfig::default();
+        upsert_monitor_rule(&mut cfg, "DP-1,1920x1080@60.00Hz,auto,1.00".into());
+        upsert_monitor_rule(&mut cfg, "HDMI-A-1,preferred,auto,1.00".into());
+        upsert_monitor_rule(&mut cfg, "DP-1,2560x1440@144.00Hz,auto,1.25".into());
+        assert_eq!(cfg.monitor_rules, vec![
+            "HDMI-A-1,preferred,auto,1.00".to_string(),
+            "DP-1,2560x1440@144.00Hz,auto,1.25".to_string(),
+        ]);
     }
 }

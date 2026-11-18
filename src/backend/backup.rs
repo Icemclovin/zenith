@@ -425,7 +425,9 @@ fn test_format_timestamp_smoke() {
 #[test]
 fn test_create_list_backup_roundtrip() {
     // Gebruik een tijdelijke HOME zodat testen nooit de echte config aanraken.
+    let _guard = crate::backend::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let fake_home = std::path::PathBuf::from("/tmp/zenith-backup-test-home");
+    let _ = std::fs::remove_dir_all(&fake_home); // restanten van een eerder mislukte run
     std::env::set_var("HOME", &fake_home);
 
     // Zet een nep-config neer.

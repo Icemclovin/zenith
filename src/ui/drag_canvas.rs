@@ -78,7 +78,7 @@ fn build_chip(
 ) -> Button {
     let text = format!("{} {}", info.icon, info.name);
     let chip = Button::builder()
-        .label(crate::ui::escape::pango_escape(&text))
+        .label(text.as_str())
         .css_classes(["zenith-drag-chip"])
         .build();
     chip.set_width_request(110);
@@ -155,14 +155,14 @@ pub fn build_drag_canvas(tr: &Translations) -> Box {
     root.set_margin_bottom(8);
 
     let title = gtk4::Label::builder()
-        .label(crate::ui::escape::pango_escape(&tr.drag_title))
+        .label(tr.drag_title.as_str())
         .css_classes(["zenith-section-title"])
         .halign(gtk4::Align::Start)
         .build();
     root.append(&title);
 
     let hint = gtk4::Label::builder()
-        .label(crate::ui::escape::pango_escape(&tr.drag_hint))
+        .label(tr.drag_hint.as_str())
         .css_classes(["zenith-dim"])
         .halign(gtk4::Align::Start)
         .build();
@@ -200,7 +200,7 @@ pub fn build_drag_canvas(tr: &Translations) -> Box {
 
         let frame_box = Box::new(Orientation::Vertical, 4);
         let lbl = gtk4::Label::builder()
-            .label(crate::ui::escape::pango_escape(&ztitle))
+            .label(ztitle.as_str())
             .css_classes(["zenith-drop-label"])
             .build();
         frame_box.append(&lbl);
@@ -235,7 +235,7 @@ pub fn build_drag_canvas(tr: &Translations) -> Box {
                 return;
             }
             if apply_move(&st_c, mid.as_str(), zkey_c.as_str()) {
-                let text = crate::ui::escape::pango_escape(&saved);
+                let text = saved.clone();
                 let lbl = sts_c.borrow();
                 lbl.set_label(&text);
             }
