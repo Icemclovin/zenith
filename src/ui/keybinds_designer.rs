@@ -139,6 +139,9 @@ pub fn build_keybinds_page(tr: &Translations) -> PreferencesPage {
 
     let saved_save = tr.keybinds_saved.clone();
     let saved_reset = tr.keybinds_saved.clone();
+    // Toon de echte uitkomst: een mislukte schrijfactie mag niet als "opgeslagen" verschijnen.
+    let failed = format!("{} {}", tr.bk_error_prefix, crate::backend::keybinds::json_path().display());
+    let failed_reset = failed.clone();
 
     let btn_save = Button::builder()
         .label(&tr.keybinds_save)
@@ -151,8 +154,8 @@ pub fn build_keybinds_page(tr: &Translations) -> PreferencesPage {
         let saved_c = saved_save.clone();
         btn_save.connect_clicked(move |_| {
             let binds = collect_entries(&rows_cell_c);
-            let _ = crate::backend::keybinds::write_keybinds(&binds);
-            status_c.set_label(&saved_c);
+            let ok = crate::backend::keybinds::write_keybinds(&binds);
+            status_c.set_label(if ok { &saved_c } else { &failed });
         });
     }
 
@@ -166,9 +169,9 @@ pub fn build_keybinds_page(tr: &Translations) -> PreferencesPage {
         let saved_c = saved_reset.clone();
         btn_reset.connect_clicked(move |_| {
             let defaults = crate::backend::keybinds::default_keybinds();
-            let _ = crate::backend::keybinds::write_keybinds(&defaults);
+            let ok = crate::backend::keybinds::write_keybinds(&defaults);
             repopulate_entries(&rows_cell_c, &defaults);
-            status_c.set_label(&saved_c);
+            status_c.set_label(if ok { &saved_c } else { &failed_reset });
         });
     }
 

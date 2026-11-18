@@ -2968,7 +2968,9 @@ fn ensure_hyprland_source(home: &Path) {
     // nooit de rest van de gebruikersconfig breekt.
     let hypr_lua = hypr_dir.join("hyprland.lua");
     if hypr_lua.exists() {
-        if !hypr_dir.join("zenith.lua").exists() {
+        // Ontbrekend of verouderd (laadt de sneltoetsen nog niet): opnieuw genereren.
+        let up_to_date = read_to_string(hypr_dir.join("zenith.lua")).map(|c| c.contains("zenith-keybinds.lua")).unwrap_or(false);
+        if !up_to_date {
             crate::backend::config::save_config(&crate::backend::config::load_config());
         }
         if let Ok(content) = read_to_string(&hypr_lua) {

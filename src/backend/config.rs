@@ -347,6 +347,8 @@ hl.config({{\n\
                 lua_str(output), lua_str(mode), lua_str(position), scale.parse::<f64>().unwrap_or(1.0)));
         }
     }
+    // Sneltoetsen bestaan pas nadat de gebruiker ze in Zenith opslaat.
+    out.push_str("pcall(dofile, os.getenv(\"HOME\") .. \"/.config/hypr/zenith-keybinds.lua\")\n");
     let bar = match cfg.active_bar.as_str() { "quickshell" => Some("quickshell -d"), "waybar" => Some("waybar"), _ => None };
     if let Some(cmd) = bar {
         out.push_str(&format!("hl.on(\"hyprland.start\", function() hl.exec_cmd({}) end)\n", lua_str(cmd)));
