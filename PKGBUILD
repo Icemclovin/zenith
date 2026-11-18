@@ -5,10 +5,10 @@
 # GitHub Release geïnstalleerd kan worden met:
 #   sudo pacman -S zenith-control
 #
-_zenith_commit="52dd740f628e687e3ae1ab46ea2f1e27175991be"
+_zenith_commit="ad819d4758fd7b187ad4384c8a9f212886cea9b5"
 pkgname=zenith-control
 pkgver=0.1.0
-pkgrel=9
+pkgrel=10
 pkgdesc="Visual studio en controlecentrum voor Hyprland & Quickshell (zenith + zenithd JSON-RPC-daemon)"
 arch=('x86_64')
 url="https://github.com/Icemclovin/zenith"
@@ -41,7 +41,7 @@ depends=(
 makedepends=('cargo' 'rust' 'git')
 
 source=("${url}/archive/${_zenith_commit}.tar.gz")
-sha256sums=('0b3167f40e7596556475e52511082f2f255f3dc50a08e3be10bef6c69b6e9397')
+sha256sums=('3c9e8b1e6f84da291132c7fd1d56189da298bf557af5413e829fb59331eb61d6')
 noextract=()
 
 build() {
