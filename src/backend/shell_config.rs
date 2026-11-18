@@ -481,6 +481,74 @@ pub struct ModuleInfo {
     pub is_custom: bool,
 }
 
+/// Een complete balkstijl: uiterlijk, indeling en modules. Ingebouwde presets en
+/// door de gebruiker opgeslagen stijlen hebben dezelfde vorm.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct BarStyle {
+    pub name: String,
+    pub styling: ShellStyling,
+    pub layout: ShellLayout,
+    pub modules: ShellModules,
+}
+
+fn mods(ids: &[&str]) -> Vec<String> {
+    ids.iter().map(|s| s.to_string()).collect()
+}
+
+/// (naam, stijl, positie, hoogte, zwevend, [achtergrond, accent, eiland, tekst, rand],
+///  [afronding, eiland-afronding, marge h, marge v, rand, lettergrootte, spacing],
+///  dekking, eiland-dekking, links, midden, rechts)
+type PresetRow<'a> = (&'a str, &'a str, &'a str, i32, bool, [&'a str; 5], [i32; 7], f64, f64, &'a [&'a str], &'a [&'a str], &'a [&'a str]);
+
+pub fn builtin_bar_styles() -> Vec<BarStyle> {
+    let rows: [PresetRow; 6] = [
+        ("Zenith Modern", "unified", "top", 38, true, ["#1e1e2e", "#89b4fa", "#181825", "#cdd6f4", "#45475a"], [12, 8, 8, 6, 1, 11, 8], 0.90, 0.85,
+         &["launcher", "brand", "workspaces"], &["active_window", "media"], &["cpu", "ram", "battery", "volume", "brightness", "network", "bluetooth", "systray", "clock", "power"]),
+        ("Dynamic Islands", "islands", "top", 38, true, ["#1e1e2e", "#cba6f7", "#11111b", "#cdd6f4", "#585b70"], [14, 10, 10, 8, 1, 11, 10], 0.80, 0.88,
+         &["launcher", "workspaces"], &["active_window", "media"], &["volume", "brightness", "network", "battery", "systray", "clock", "power"]),
+        ("Cyber Neon", "islands", "top", 40, true, ["#0a0a14", "#00ffff", "#101026", "#00ffcc", "#ff007f"], [16, 10, 12, 8, 2, 12, 12], 0.92, 0.90,
+         &["launcher", "brand", "workspaces"], &["active_window", "media"], &["cpu", "ram", "volume", "network", "clock", "power"]),
+        ("Nord Frost", "unified", "top", 36, true, ["#2e3440", "#88c0d0", "#3b4252", "#eceff4", "#4c566a"], [10, 8, 8, 6, 1, 11, 8], 0.95, 0.90,
+         &["workspaces"], &["active_window"], &["volume", "brightness", "network", "battery", "clock", "power"]),
+        ("Cupertino Dock", "unified", "bottom", 44, true, ["#1c1c1e", "#0a84ff", "#2c2c2e", "#ffffff", "#3a3a3c"], [20, 12, 18, 10, 1, 12, 10], 0.75, 0.80,
+         &["launcher", "brand"], &["workspaces", "active_window"], &["volume", "brightness", "systray", "clock", "power"]),
+        ("Compact Edge", "unified", "top", 28, false, ["#181825", "#89dceb", "#11111b", "#cdd6f4", "#313244"], [0, 4, 0, 0, 0, 10, 6], 1.0, 1.0,
+         &["workspaces"], &["active_window"], &["cpu", "ram", "volume", "clock", "power"]),
+    ];
+    rows.iter().map(|&(name, style, pos, height, floating, c, n, opacity, pill_opacity, l, m, r)| BarStyle {
+        name: name.to_string(),
+        styling: ShellStyling {
+            background: c[0].into(), accent: c[1].into(), pill_bg: c[2].into(), text_color: c[3].into(), border_color: c[4].into(),
+            rounding: n[0], pill_rounding: n[1], margin_h: n[2], margin_v: n[3], border_width: n[4], font_size: n[5], module_spacing: n[6],
+            opacity, pill_opacity,
+        },
+        layout: ShellLayout { position: pos.into(), height, floating, bar_style: style.into() },
+        modules: ShellModules { left: mods(l), center: mods(m), right: mods(r) },
+    }).collect()
+}
+
+fn user_styles_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".config/zenith/bar-styles.json"))
+}
+
+/// Door de gebruiker opgeslagen balkstijlen (leeg bij ontbrekend of kapot bestand).
+pub fn load_user_styles() -> Vec<BarStyle> {
+    user_styles_path()
+        .and_then(|p| read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_user_styles(styles: &[BarStyle]) -> Result<(), std::io::Error> {
+    let path = user_styles_path().ok_or_else(|| std::io::Error::other("HOME niet gezet"))?;
+    if let Some(dir) = path.parent() {
+        create_dir_all(dir)?;
+    }
+    let json = serde_json::to_string_pretty(styles).map_err(std::io::Error::other)?;
+    write_text_atomic_owned(&path.with_extension("json.tmp"), &path, &json)
+}
+
 impl ZenithShellConfig {
     pub fn config_path() -> Option<PathBuf> {
         let home = std::env::var("HOME").ok()?;
@@ -961,6 +1029,36 @@ mod tests {
         assert_eq!(parsed.layout.position, "left");
         assert_eq!(parsed.custom_scripts.len(), 1);
         assert_eq!(parsed.custom_scripts[0].name, "Weerbericht");
+    }
+
+    #[test]
+    fn test_user_bar_styles_roundtrip() {
+        let _guard = crate::backend::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = std::path::PathBuf::from("/tmp/zenith-bar-styles-home");
+        let _ = std::fs::remove_dir_all(&home);
+        std::env::set_var("HOME", &home);
+
+        assert!(load_user_styles().is_empty());
+        let mut style = builtin_bar_styles()[2].clone();
+        style.name = "Mijn neon".into();
+        save_user_styles(&[style.clone()]).unwrap();
+        assert_eq!(load_user_styles(), vec![style]);
+
+        // Kapot bestand mag de app niet laten crashen.
+        std::fs::write(home.join(".config/zenith/bar-styles.json"), "{kapot").unwrap();
+        assert!(load_user_styles().is_empty());
+        std::env::remove_var("HOME");
+    }
+
+    #[test]
+    fn builtin_bar_styles_are_complete() {
+        let styles = builtin_bar_styles();
+        assert_eq!(styles.len(), 6);
+        for s in &styles {
+            assert!(s.styling.background.starts_with('#') && s.styling.accent.starts_with('#'));
+            assert!(!s.modules.right.is_empty());
+        }
+        assert_eq!(styles[4].layout.position, "bottom");
     }
 
     #[test]

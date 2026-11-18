@@ -1,1374 +1,629 @@
 use gtk4::prelude::*;
-use gtk4::{
-    Button, DropDown, Entry, ListBox, Orientation, Scale, StringList, Switch,
-};
+use gtk4::{Box, Button, DropDown, FlowBox, Label, ListBox, Orientation, StringList};
 use libadwaita::prelude::*;
-use libadwaita::{ActionRow, PreferencesGroup, PreferencesPage};
+use libadwaita::{ActionRow, ComboRow, EntryRow, PreferencesGroup, PreferencesPage};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::config::{self, ZenithConfig};
 use crate::backend::i18n::Translations;
-use crate::backend::shell_config::{CustomScriptModule, ZenithShellConfig};
+use crate::backend::shell_config::{self, BarStyle, CustomScriptModule, ZenithShellConfig};
 use crate::backend::{process, themes};
+use crate::ui::rows;
 
-pub fn build_quickshell_page(state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> PreferencesPage {
+type Shell = Rc<RefCell<ZenithShellConfig>>;
+type Notify = Rc<dyn Fn(&str)>;
+/// Past een wijziging toe op de shell-config, spiegelt naar zenith.conf en slaat alles op.
+type Commit = Rc<dyn Fn(&dyn Fn(&mut ZenithShellConfig))>;
+
+/// Neemt een complete stijl over en spiegelt hem naar de legacy ZenithConfig (zenith.conf).
+fn apply_style(sh: &mut ZenithShellConfig, cfg: &mut ZenithConfig, style: &BarStyle) {
+    sh.styling = style.styling.clone();
+    sh.layout = style.layout.clone();
+    sh.modules = style.modules.clone();
+    mirror_to_legacy(sh, cfg);
+}
+
+fn mirror_to_legacy(sh: &ZenithShellConfig, cfg: &mut ZenithConfig) {
+    let hex = |s: &str| s.trim_start_matches('#').to_string();
+    cfg.qs_bar_style = sh.layout.bar_style.clone();
+    cfg.qs_position = sh.layout.position.clone();
+    cfg.qs_height = sh.layout.height;
+    cfg.qs_floating = sh.layout.floating;
+    cfg.qs_bg = hex(&sh.styling.background);
+    cfg.qs_accent = hex(&sh.styling.accent);
+    cfg.qs_pill_bg = hex(&sh.styling.pill_bg);
+    cfg.qs_text_color = hex(&sh.styling.text_color);
+    cfg.qs_border_color = hex(&sh.styling.border_color);
+    cfg.qs_rounding = sh.styling.rounding;
+    cfg.qs_pill_rounding = sh.styling.pill_rounding;
+    cfg.qs_margin_h = sh.styling.margin_h;
+    cfg.qs_margin_v = sh.styling.margin_v;
+    cfg.qs_border_width = sh.styling.border_width;
+    cfg.qs_opacity = sh.styling.opacity;
+    cfg.qs_pill_opacity = sh.styling.pill_opacity;
+    cfg.qs_font_size = sh.styling.font_size;
+    cfg.qs_module_spacing = sh.styling.module_spacing;
+}
+
+/// `rebuild` herbouwt de pagina (na een stijlwissel), `notify` toont een toast.
+pub fn build_quickshell_page(
+    state: &Rc<RefCell<ZenithConfig>>,
+    tr: &Translations,
+    rebuild: Rc<dyn Fn()>,
+    notify: Notify,
+) -> PreferencesPage {
     let page = PreferencesPage::new();
+    let tr = Rc::new(tr.clone());
+    let shell_state: Shell = Rc::new(RefCell::new(ZenithShellConfig::load_or_default()));
 
-    // 0. Drag-and-Drop-Canvas (interactieve statusbalk-simulatie)
-    let canvas_group = PreferencesGroup::builder()
-        .title(crate::ui::escape::pango_escape(&tr.drag_title))
+    // Eén plek die een wijziging toepast op beide configs en alles wegschrijft.
+    let commit: Commit = {
+        let (sh, st) = (Rc::clone(&shell_state), Rc::clone(state));
+        Rc::new(move |change| {
+            change(&mut sh.borrow_mut());
+            mirror_to_legacy(&sh.borrow(), &mut st.borrow_mut());
+            themes::sync_shell_config(&sh.borrow());
+            config::save_config(&st.borrow());
+        })
+    };
+
+    // ========================================================
+    // 1. Stijlen: ingebouwd + eigen (één klik)
+    // ========================================================
+    let group_presets = PreferencesGroup::builder().title(&tr.bar_preset_theme).description(&tr.sb_presets_desc).build();
+    let builtin = shell_config::builtin_bar_styles();
+    let style_grid = FlowBox::builder()
+        .selection_mode(gtk4::SelectionMode::None)
+        .homogeneous(true)
+        .min_children_per_line(2)
+        .max_children_per_line(3)
+        .column_spacing(8)
+        .row_spacing(8)
         .build();
-    let canvas = crate::ui::drag_canvas::build_drag_canvas(tr);
-    canvas_group.add(&canvas);
+    for style in builtin {
+        style_grid.insert(&style_card(&style, state, &shell_state, &rebuild, &notify, &tr), -1);
+    }
+    group_presets.add(&style_grid);
+    page.add(&group_presets);
+
+    let group_mine = PreferencesGroup::builder().title(&tr.sb_my_styles).description(&tr.sb_my_styles_desc).build();
+    let user_styles = shell_config::load_user_styles();
+    if user_styles.is_empty() {
+        group_mine.add(&ActionRow::builder().title(tr.sb_no_styles.as_str()).css_classes(["zenith-dim"]).build());
+    }
+    for (idx, style) in user_styles.iter().enumerate() {
+        let row = ActionRow::builder()
+            .title(crate::ui::escape::pango_escape(&style.name))
+            .subtitle(format!("{} · {} · {}", style.layout.bar_style, style.layout.position, style.styling.accent))
+            .activatable(true)
+            .build();
+        row.add_prefix(&swatch(&style.styling.accent));
+        let (st, sh, rb, nt, msg, s) = (Rc::clone(state), Rc::clone(&shell_state), Rc::clone(&rebuild), Rc::clone(&notify), tr.sb_style_applied.clone(), style.clone());
+        row.connect_activated(move |_| {
+            apply_style(&mut sh.borrow_mut(), &mut st.borrow_mut(), &s);
+            themes::sync_shell_config(&sh.borrow());
+            config::save_config(&st.borrow());
+            nt(&msg);
+            rb();
+        });
+        let btn_del = Button::builder()
+            .icon_name("user-trash-symbolic")
+            .tooltip_text(tr.sb_delete_style.as_str())
+            .valign(gtk4::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        let rb = Rc::clone(&rebuild);
+        btn_del.connect_clicked(move |_| {
+            let mut styles = shell_config::load_user_styles();
+            if idx < styles.len() {
+                styles.remove(idx);
+                let _ = shell_config::save_user_styles(&styles);
+            }
+            rb();
+        });
+        row.add_suffix(&btn_del);
+        group_mine.add(&row);
+    }
+    let row_save = EntryRow::builder().title(tr.sb_style_name.as_str()).show_apply_button(true).build();
+    row_save.set_tooltip_text(Some(tr.sb_save_style.as_str()));
+    {
+        let (sh, rb, nt, msg) = (Rc::clone(&shell_state), Rc::clone(&rebuild), Rc::clone(&notify), tr.sb_style_saved.clone());
+        row_save.connect_apply(move |r| {
+            let name = r.text().trim().to_string();
+            if name.is_empty() {
+                return;
+            }
+            let cur = sh.borrow();
+            let mut styles = shell_config::load_user_styles();
+            styles.retain(|s| s.name != name); // zelfde naam = overschrijven
+            styles.push(BarStyle { name, styling: cur.styling.clone(), layout: cur.layout.clone(), modules: cur.modules.clone() });
+            drop(cur);
+            match shell_config::save_user_styles(&styles) {
+                Ok(()) => nt(&msg),
+                Err(e) => nt(&e.to_string()),
+            }
+            rb();
+        });
+    }
+    group_mine.add(&row_save);
+    page.add(&group_mine);
+
+    // ========================================================
+    // 2. Modules: canvas + lijsten per gedeelte
+    // ========================================================
+    let canvas_group = PreferencesGroup::new(); // de canvas tekent zijn eigen titel
+    canvas_group.add(&crate::ui::drag_canvas::build_drag_canvas(&tr));
     page.add(&canvas_group);
 
-    let shell_state = Rc::new(RefCell::new(ZenithShellConfig::load_or_default()));
+    let list_left = Rc::new(boxed_list());
+    let list_center = Rc::new(boxed_list());
+    let list_right = Rc::new(boxed_list());
 
-    // 1. Thema Presets (1-Klik Stijlen)
-    let group_presets = PreferencesGroup::builder()
-        .title(&tr.bar_preset_theme)
-        .description("Pas direct een complete vooraf ontworpen balkstijl en module-indeling toe")
-        .build();
-
-    let row_preset = ActionRow::builder()
-        .title("Kies een Thema Preset")
-        .subtitle("Selecteer een vooraf geconfigureerde stijl en klik op Toepassen")
-        .build();
-
-    let preset_model = StringList::new(&[
-        "🌟 Zenith Modern (Zwevende balk, Catppuccin)",
-        "🏝️ Dynamic Islands (Losse capsule-eilanden)",
-        "🌌 Cyber Neon (Diep donker met neon accenten)",
-        "🍃 Nord Frost (Scandinavisch koel & clean)",
-        "🍎 Cupertino Dock (Onderaan het scherm)",
-        "⚡ Compact Edge (Bovenaan schermbreed & strak)",
-    ]);
-    let dd_preset = DropDown::builder().model(&preset_model).valign(gtk4::Align::Center).build();
-    let btn_apply_preset = Button::builder().label(&tr.bar_apply_preset).valign(gtk4::Align::Center).build();
-
-    // Boxed list containers for modules
-    let list_box_left = ListBox::builder().selection_mode(gtk4::SelectionMode::None).css_classes(["boxed-list"]).build();
-    let list_box_center = ListBox::builder().selection_mode(gtk4::SelectionMode::None).css_classes(["boxed-list"]).build();
-    let list_box_right = ListBox::builder().selection_mode(gtk4::SelectionMode::None).css_classes(["boxed-list"]).build();
-
-    let list_left_rc = Rc::new(list_box_left);
-    let list_center_rc = Rc::new(list_box_center);
-    let list_right_rc = Rc::new(list_box_right);
-
-    // Closure to refresh all module lists
     let refresh_all_modules: Rc<dyn Fn()> = {
-        let shell_state = Rc::clone(&shell_state);
-        let list_l = Rc::clone(&list_left_rc);
-        let list_c = Rc::clone(&list_center_rc);
-        let list_r = Rc::clone(&list_right_rc);
+        let (sh, l, c, r, tr) = (Rc::clone(&shell_state), Rc::clone(&list_left), Rc::clone(&list_center), Rc::clone(&list_right), Rc::clone(&tr));
         Rc::new(move || {
-            refresh_slot(&list_l, "left", &shell_state);
-            refresh_slot(&list_c, "center", &shell_state);
-            refresh_slot(&list_r, "right", &shell_state);
+            refresh_slot(&l, "left", &sh, &tr);
+            refresh_slot(&c, "center", &sh, &tr);
+            refresh_slot(&r, "right", &sh, &tr);
         })
     };
 
     let picker_dropdowns: Rc<RefCell<Vec<DropDown>>> = Rc::new(RefCell::new(Vec::new()));
     let refresh_picker_models: Rc<dyn Fn()> = {
-        let pickers = Rc::clone(&picker_dropdowns);
-        let sh_st = Rc::clone(&shell_state);
+        let (pickers, sh) = (Rc::clone(&picker_dropdowns), Rc::clone(&shell_state));
         Rc::new(move || {
-            let all_modules = sh_st.borrow().discover_modules_for_instance();
-            let labels: Vec<String> = all_modules
-                .iter()
-                .map(|m| format!("{} {}", m.icon, m.name))
-                .collect();
+            let labels = module_labels(&sh);
             let labels_ref: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
             for dd in pickers.borrow().iter() {
-                let model = StringList::new(&labels_ref);
-                dd.set_model(Some(&model));
+                dd.set_model(Some(&StringList::new(&labels_ref)));
             }
         })
     };
 
-    // Apply preset handler
-    {
-        let st = Rc::clone(state);
-        let sh_st = Rc::clone(&shell_state);
-        let dd = dd_preset.clone();
-        let refresh_mod = Rc::clone(&refresh_all_modules);
-        let refresh_pick = Rc::clone(&refresh_picker_models);
-        btn_apply_preset.connect_clicked(move |_| {
-            let idx = dd.selected() as usize;
-            let mut cfg = st.borrow_mut();
-            let mut sh = sh_st.borrow_mut();
-
-            match idx {
-                1 => { // Dynamic Islands
-                    sh.layout.bar_style = "islands".to_string();
-                    sh.layout.position = "top".to_string();
-                    sh.layout.height = 38;
-                    sh.layout.floating = true;
-                    sh.styling.background = "#1e1e2e".to_string();
-                    sh.styling.accent = "#cba6f7".to_string();
-                    sh.styling.pill_bg = "#11111b".to_string();
-                    sh.styling.text_color = "#cdd6f4".to_string();
-                    sh.styling.border_color = "#585b70".to_string();
-                    sh.styling.rounding = 14;
-                    sh.styling.pill_rounding = 10;
-                    sh.styling.margin_h = 10;
-                    sh.styling.margin_v = 8;
-                    sh.styling.border_width = 1;
-                    sh.styling.opacity = 0.80;
-                    sh.styling.pill_opacity = 0.88;
-                    sh.styling.font_size = 11;
-                    sh.styling.module_spacing = 10;
-                    sh.modules.left = vec!["launcher".to_string(), "workspaces".to_string()];
-                    sh.modules.center = vec!["active_window".to_string(), "media".to_string()];
-                    sh.modules.right = vec!["volume".to_string(), "brightness".to_string(), "network".to_string(), "battery".to_string(), "systray".to_string(), "clock".to_string(), "power".to_string()];
-                }
-                2 => { // Cyber Neon
-                    sh.layout.bar_style = "islands".to_string();
-                    sh.layout.position = "top".to_string();
-                    sh.layout.height = 40;
-                    sh.layout.floating = true;
-                    sh.styling.background = "#0a0a14".to_string();
-                    sh.styling.accent = "#00ffff".to_string();
-                    sh.styling.pill_bg = "#101026".to_string();
-                    sh.styling.text_color = "#00ffcc".to_string();
-                    sh.styling.border_color = "#ff007f".to_string();
-                    sh.styling.rounding = 16;
-                    sh.styling.pill_rounding = 10;
-                    sh.styling.margin_h = 12;
-                    sh.styling.margin_v = 8;
-                    sh.styling.border_width = 2;
-                    sh.styling.opacity = 0.92;
-                    sh.styling.pill_opacity = 0.90;
-                    sh.styling.font_size = 12;
-                    sh.styling.module_spacing = 12;
-                    sh.modules.left = vec!["launcher".to_string(), "brand".to_string(), "workspaces".to_string()];
-                    sh.modules.center = vec!["active_window".to_string(), "media".to_string()];
-                    sh.modules.right = vec!["cpu".to_string(), "ram".to_string(), "volume".to_string(), "network".to_string(), "clock".to_string(), "power".to_string()];
-                }
-                3 => { // Nord Frost
-                    sh.layout.bar_style = "unified".to_string();
-                    sh.layout.position = "top".to_string();
-                    sh.layout.height = 36;
-                    sh.layout.floating = true;
-                    sh.styling.background = "#2e3440".to_string();
-                    sh.styling.accent = "#88c0d0".to_string();
-                    sh.styling.pill_bg = "#3b4252".to_string();
-                    sh.styling.text_color = "#eceff4".to_string();
-                    sh.styling.border_color = "#4c566a".to_string();
-                    sh.styling.rounding = 10;
-                    sh.styling.pill_rounding = 8;
-                    sh.styling.margin_h = 8;
-                    sh.styling.margin_v = 6;
-                    sh.styling.border_width = 1;
-                    sh.styling.opacity = 0.95;
-                    sh.styling.pill_opacity = 0.90;
-                    sh.styling.font_size = 11;
-                    sh.styling.module_spacing = 8;
-                    sh.modules.left = vec!["workspaces".to_string()];
-                    sh.modules.center = vec!["active_window".to_string()];
-                    sh.modules.right = vec!["volume".to_string(), "brightness".to_string(), "network".to_string(), "battery".to_string(), "clock".to_string(), "power".to_string()];
-                }
-                4 => { // Cupertino Dock
-                    sh.layout.bar_style = "unified".to_string();
-                    sh.layout.position = "bottom".to_string();
-                    sh.layout.height = 44;
-                    sh.layout.floating = true;
-                    sh.styling.background = "#1c1c1e".to_string();
-                    sh.styling.accent = "#0a84ff".to_string();
-                    sh.styling.pill_bg = "#2c2c2e".to_string();
-                    sh.styling.text_color = "#ffffff".to_string();
-                    sh.styling.border_color = "#3a3a3c".to_string();
-                    sh.styling.rounding = 20;
-                    sh.styling.pill_rounding = 12;
-                    sh.styling.margin_h = 18;
-                    sh.styling.margin_v = 10;
-                    sh.styling.border_width = 1;
-                    sh.styling.opacity = 0.75;
-                    sh.styling.pill_opacity = 0.80;
-                    sh.styling.font_size = 12;
-                    sh.styling.module_spacing = 10;
-                    sh.modules.left = vec!["launcher".to_string(), "brand".to_string()];
-                    sh.modules.center = vec!["workspaces".to_string(), "active_window".to_string()];
-                    sh.modules.right = vec!["volume".to_string(), "brightness".to_string(), "systray".to_string(), "clock".to_string(), "power".to_string()];
-                }
-                5 => { // Compact Edge
-                    sh.layout.bar_style = "unified".to_string();
-                    sh.layout.position = "top".to_string();
-                    sh.layout.height = 28;
-                    sh.layout.floating = false;
-                    sh.styling.background = "#181825".to_string();
-                    sh.styling.accent = "#89dceb".to_string();
-                    sh.styling.pill_bg = "#11111b".to_string();
-                    sh.styling.text_color = "#cdd6f4".to_string();
-                    sh.styling.border_color = "#313244".to_string();
-                    sh.styling.rounding = 0;
-                    sh.styling.pill_rounding = 4;
-                    sh.styling.margin_h = 0;
-                    sh.styling.margin_v = 0;
-                    sh.styling.border_width = 0;
-                    sh.styling.opacity = 1.0;
-                    sh.styling.pill_opacity = 1.0;
-                    sh.styling.font_size = 10;
-                    sh.styling.module_spacing = 6;
-                    sh.modules.left = vec!["workspaces".to_string()];
-                    sh.modules.center = vec!["active_window".to_string()];
-                    sh.modules.right = vec!["cpu".to_string(), "ram".to_string(), "volume".to_string(), "clock".to_string(), "power".to_string()];
-                }
-                _ => { // Zenith Modern (Default)
-                    sh.layout.bar_style = "unified".to_string();
-                    sh.layout.position = "top".to_string();
-                    sh.layout.height = 38;
-                    sh.layout.floating = true;
-                    sh.styling.background = "#1e1e2e".to_string();
-                    sh.styling.accent = "#89b4fa".to_string();
-                    sh.styling.pill_bg = "#181825".to_string();
-                    sh.styling.text_color = "#cdd6f4".to_string();
-                    sh.styling.border_color = "#45475a".to_string();
-                    sh.styling.rounding = 12;
-                    sh.styling.pill_rounding = 8;
-                    sh.styling.margin_h = 8;
-                    sh.styling.margin_v = 6;
-                    sh.styling.border_width = 1;
-                    sh.styling.opacity = 0.90;
-                    sh.styling.pill_opacity = 0.85;
-                    sh.styling.font_size = 11;
-                    sh.styling.module_spacing = 8;
-                    sh.modules.left = vec!["launcher".to_string(), "brand".to_string(), "workspaces".to_string()];
-                    sh.modules.center = vec!["active_window".to_string(), "media".to_string()];
-                    sh.modules.right = vec!["cpu".to_string(), "ram".to_string(), "battery".to_string(), "volume".to_string(), "brightness".to_string(), "network".to_string(), "bluetooth".to_string(), "systray".to_string(), "clock".to_string(), "power".to_string()];
-                }
-            }
-
-            // Sync to legacy ZenithConfig as well
-            cfg.qs_bar_style = sh.layout.bar_style.clone();
-            cfg.qs_position = sh.layout.position.clone();
-            cfg.qs_height = sh.layout.height;
-            cfg.qs_floating = sh.layout.floating;
-            cfg.qs_bg = sh.styling.background.trim_start_matches('#').to_string();
-            cfg.qs_accent = sh.styling.accent.trim_start_matches('#').to_string();
-            cfg.qs_pill_bg = sh.styling.pill_bg.trim_start_matches('#').to_string();
-            cfg.qs_text_color = sh.styling.text_color.trim_start_matches('#').to_string();
-            cfg.qs_border_color = sh.styling.border_color.trim_start_matches('#').to_string();
-            cfg.qs_rounding = sh.styling.rounding;
-            cfg.qs_pill_rounding = sh.styling.pill_rounding;
-            cfg.qs_margin_h = sh.styling.margin_h;
-            cfg.qs_margin_v = sh.styling.margin_v;
-            cfg.qs_border_width = sh.styling.border_width;
-            cfg.qs_opacity = sh.styling.opacity;
-            cfg.qs_pill_opacity = sh.styling.pill_opacity;
-            cfg.qs_font_size = sh.styling.font_size;
-            cfg.qs_module_spacing = sh.styling.module_spacing;
-
-            themes::sync_shell_config(&sh);
-            config::save_config(&cfg);
-            refresh_mod();
-            refresh_pick();
-        });
-    }
-
-    row_preset.add_suffix(&dd_preset);
-    row_preset.add_suffix(&btn_apply_preset);
-    group_presets.add(&row_preset);
-    page.add(&group_presets);
-
-    // ========================================================
-    // 2. Statusbar Designer: Modulaire Indeling (Links/Midden/Rechts)
-    // ========================================================
-    let group_modules = PreferencesGroup::builder()
-        .title("Statusbar Designer: Modulaire Indeling")
-        .description("Bepaal exact welke modules op de statusbalk verschijnen en in welke volgorde. Custom widgets worden automatisch gedetecteerd!")
-        .build();
+    let group_modules = PreferencesGroup::builder().title(&tr.sb_layout_title).description(&tr.sb_layout_desc).build();
     page.add(&group_modules);
-
-    // Subgroep: Links
-    let group_mod_left = PreferencesGroup::builder()
-        .title(&tr.bar_left_modules)
-        .description("Modules aan de linkerzijde van de statusbalk")
-        .build();
-    group_mod_left.add(&*list_left_rc);
-    add_module_picker_row(&group_mod_left, "left", &shell_state, &list_left_rc, &picker_dropdowns);
-    page.add(&group_mod_left);
-
-    // Subgroep: Midden
-    let group_mod_center = PreferencesGroup::builder()
-        .title(&tr.bar_center_modules)
-        .description("Modules gecentreerd op de statusbalk")
-        .build();
-    group_mod_center.add(&*list_center_rc);
-    add_module_picker_row(&group_mod_center, "center", &shell_state, &list_center_rc, &picker_dropdowns);
-    page.add(&group_mod_center);
-
-    // Subgroep: Rechts
-    let group_mod_right = PreferencesGroup::builder()
-        .title(&tr.bar_right_modules)
-        .description("Modules aan de rechterzijde van de statusbalk")
-        .build();
-    group_mod_right.add(&*list_right_rc);
-    add_module_picker_row(&group_mod_right, "right", &shell_state, &list_right_rc, &picker_dropdowns);
-    page.add(&group_mod_right);
-
-    // Eerste vulling van de modulelijsten
+    for (slot, title, list) in [
+        ("left", &tr.bar_left_modules, &list_left),
+        ("center", &tr.bar_center_modules, &list_center),
+        ("right", &tr.bar_right_modules, &list_right),
+    ] {
+        let group = PreferencesGroup::builder().title(title).build();
+        group.add(&**list);
+        add_module_picker_row(&group, slot, &shell_state, list, &picker_dropdowns, &tr);
+        page.add(&group);
+    }
     refresh_all_modules();
 
     // ========================================================
-    // 3. Custom Commando / Script Modules Studio
+    // 3. Scriptmodules (shell-commando als widget)
     // ========================================================
-    let group_custom_scripts = PreferencesGroup::builder()
-        .title(&tr.bar_custom_script)
-        .description("Maak en beheer eigen statusbalk-modules op basis van bash-commando's zonder QML te hoeven schrijven")
-        .build();
-
-    let list_box_scripts = ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::None)
-        .css_classes(["boxed-list"])
-        .build();
-    let list_scripts_rc = Rc::new(list_box_scripts);
-    group_custom_scripts.add(&*list_scripts_rc);
-
+    let group_scripts = PreferencesGroup::builder().title(&tr.bar_custom_script).description(&tr.sb_scripts_desc).build();
+    let list_scripts = Rc::new(boxed_list());
+    group_scripts.add(&*list_scripts);
     let refresh_scripts: Rc<dyn Fn()> = {
-        let lb_s = Rc::clone(&list_scripts_rc);
-        let sh_st = Rc::clone(&shell_state);
-        let ref_all = Rc::clone(&refresh_all_modules);
-        let ref_pick = Rc::clone(&refresh_picker_models);
-        Rc::new(move || {
-            refresh_scripts_list(&lb_s, &sh_st, &ref_all, &ref_pick);
-        })
+        let (lb, sh, ra, rp, tr) = (Rc::clone(&list_scripts), Rc::clone(&shell_state), Rc::clone(&refresh_all_modules), Rc::clone(&refresh_picker_models), Rc::clone(&tr));
+        Rc::new(move || refresh_scripts_list(&lb, &sh, &ra, &rp, &tr))
     };
-
-    // Vulling van scriptlijst
     refresh_scripts();
 
-    // Formulier voor nieuwe scriptmodule
-    let row_cs_name = ActionRow::builder()
-        .title(crate::ui::escape::pango_escape("Modulenaam & Icoon"))
-        .subtitle("Geef je module een herkenbare naam en emoji-icoon")
-        .build();
-    let ent_cs_name = Entry::builder()
-        .placeholder_text("Bv. Spotify of Bitcoin")
-        .width_chars(16)
+    let form = boxed_list();
+    let ent_name = EntryRow::builder().title(tr.sb_script_name.as_str()).build();
+    let ent_icon = EntryRow::builder().title(tr.sb_script_icon.as_str()).build();
+    let ent_cmd = EntryRow::builder().title(tr.sb_script_cmd.as_str()).build();
+    let ent_click = EntryRow::builder().title(tr.sb_script_click.as_str()).build();
+    let interval = Rc::new(std::cell::Cell::new(5.0));
+    let iv = Rc::clone(&interval);
+    let row_int = rows::slider_row(&tr.sb_script_interval, 1.0, 300.0, 1.0, 5.0, |v| format!("{} s", v), move |v| iv.set(v));
+    let row_create = ActionRow::new();
+    let btn_create = Button::builder()
+        .label(tr.sb_script_create.as_str())
+        .halign(gtk4::Align::End)
         .valign(gtk4::Align::Center)
+        .css_classes(["suggested-action", "pill"])
         .build();
-    let ent_cs_icon = Entry::builder()
-        .placeholder_text("Icoon (bv. 🎵)")
-        .width_chars(8)
-        .valign(gtk4::Align::Center)
-        .build();
-    row_cs_name.add_suffix(&ent_cs_name);
-    row_cs_name.add_suffix(&ent_cs_icon);
-    group_custom_scripts.add(&row_cs_name);
-
-    let row_cs_cmd = ActionRow::builder()
-        .title("Shell Commando (Output)")
-        .subtitle("Het bash-commando waarvan de output live op de statusbalk verschijnt")
-        .build();
-    let ent_cs_cmd = Entry::builder()
-        .placeholder_text("Bv. playerctl metadata --format '{{title}}' || echo ''")
-        .width_chars(28)
-        .valign(gtk4::Align::Center)
-        .build();
-    row_cs_cmd.add_suffix(&ent_cs_cmd);
-    group_custom_scripts.add(&row_cs_cmd);
-
-    let row_cs_int = ActionRow::builder()
-        .title("Update Interval")
-        .subtitle("5 seconden")
-        .build();
-    let s_cs_int = Scale::with_range(Orientation::Horizontal, 1.0, 300.0, 1.0);
-    s_cs_int.set_draw_value(false);
-    s_cs_int.set_value(5.0);
-    s_cs_int.set_width_request(160);
-    {
-        let r_c = row_cs_int.clone();
-        s_cs_int.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} seconden", v));
-        });
+    row_create.add_suffix(&btn_create);
+    for w in [ent_name.upcast_ref::<gtk4::Widget>(), ent_icon.upcast_ref(), ent_cmd.upcast_ref(), ent_click.upcast_ref(), row_int.upcast_ref(), row_create.upcast_ref()] {
+        form.append(w);
     }
-    row_cs_int.add_suffix(&s_cs_int);
-    group_custom_scripts.add(&row_cs_int);
-
-    let row_cs_click = ActionRow::builder()
-        .title("Actie bij Klik (On-Click)")
-        .subtitle("Optioneel commando dat uitgevoerd wordt bij een klik op het widget")
-        .build();
-    let ent_cs_click = Entry::builder()
-        .placeholder_text("Bv. alacritty -e btop of playerctl play-pause")
-        .width_chars(28)
-        .valign(gtk4::Align::Center)
-        .build();
-    row_cs_click.add_suffix(&ent_cs_click);
-    group_custom_scripts.add(&row_cs_click);
-
-    let row_cs_save = ActionRow::builder()
-        .title("Nieuwe Scriptmodule Opslaan")
-        .subtitle("Sla op in zenith-shell.json en maak direct beschikbaar in de modulekiezers hierboven")
-        .build();
-    let btn_save_script = Button::builder().label("➕ Scriptmodule Aanmaken").valign(gtk4::Align::Center).build();
-    btn_save_script.add_css_class("suggested-action");
     {
-        let sh_st = Rc::clone(&shell_state);
-        let ref_scr = Rc::clone(&refresh_scripts);
-        let ref_pick = Rc::clone(&refresh_picker_models);
-        let e_name = ent_cs_name.clone();
-        let e_icon = ent_cs_icon.clone();
-        let e_cmd = ent_cs_cmd.clone();
-        let e_click = ent_cs_click.clone();
-        let s_int = s_cs_int.clone();
-
-        btn_save_script.connect_clicked(move |_| {
-            let name_raw = e_name.text().trim().to_string();
-            let cmd_raw = e_cmd.text().trim().to_string();
-            if cmd_raw.is_empty() {
+        let (sh, rs, rp, nt, need) = (Rc::clone(&shell_state), Rc::clone(&refresh_scripts), Rc::clone(&refresh_picker_models), Rc::clone(&notify), tr.sb_script_need_cmd.clone());
+        let (e_name, e_icon, e_cmd, e_click) = (ent_name.clone(), ent_icon.clone(), ent_cmd.clone(), ent_click.clone());
+        btn_create.connect_clicked(move |_| {
+            let cmd = e_cmd.text().trim().to_string();
+            if cmd.is_empty() {
+                nt(&need);
                 return;
             }
-            let icon_raw = e_icon.text().trim().to_string();
-            let icon = if icon_raw.is_empty() { "💻".to_string() } else { icon_raw };
-            let name = if name_raw.is_empty() { "Custom Script".to_string() } else { name_raw };
+            let name = Some(e_name.text().trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "Custom Script".into());
+            let icon = Some(e_icon.text().trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "💻".into());
+            let on_click = Some(e_click.text().trim().to_string()).filter(|s| !s.is_empty());
 
-            let mut sh = sh_st.borrow_mut();
-
-            // Genereer veilige unieke ID
-            let base_id: String = name
-                .to_lowercase()
-                .chars()
-                .map(|c| if c.is_alphanumeric() { c } else { '_' })
-                .collect();
-            let trimmed_id = base_id.trim_matches('_').to_string();
-            let start_id = if trimmed_id.is_empty() { "custom_script".to_string() } else { trimmed_id };
-
-            let mut final_id = start_id.clone();
-            let mut counter = 1;
-            while sh.custom_scripts.iter().any(|s| s.id == final_id) {
-                final_id = format!("{}_{}", start_id, counter);
-                counter += 1;
-            }
-
-            let interval_sec = s_int.value().round() as u32;
-            let onclick_raw = e_click.text().trim().to_string();
-            let on_click = if onclick_raw.is_empty() { None } else { Some(onclick_raw) };
-
-            let new_script = CustomScriptModule {
-                id: final_id,
+            let mut cfg = sh.borrow_mut();
+            let id = unique_script_id(&name, &cfg.custom_scripts);
+            cfg.custom_scripts.push(CustomScriptModule {
+                id,
                 name,
                 icon,
-                command: cmd_raw,
-                interval_seconds: interval_sec,
+                command: cmd,
+                interval_seconds: interval.get() as u32,
                 on_click,
-            };
-
-            sh.custom_scripts.push(new_script);
-            themes::sync_shell_config(&sh);
-            drop(sh);
-
-            // Reset invoervelden
-            e_name.set_text("");
-            e_icon.set_text("");
-            e_cmd.set_text("");
-            e_click.set_text("");
-            s_int.set_value(5.0);
-
-            // Refresh UI
-            ref_scr();
-            ref_pick();
+            });
+            themes::sync_shell_config(&cfg);
+            drop(cfg);
+            for e in [&e_name, &e_icon, &e_cmd, &e_click] {
+                e.set_text("");
+            }
+            rs();
+            rp();
         });
     }
-    row_cs_save.add_suffix(&btn_save_script);
-    group_custom_scripts.add(&row_cs_save);
-
-    page.add(&group_custom_scripts);
+    group_scripts.add(&form);
+    page.add(&group_scripts);
 
     // ========================================================
-    // 3b. Volledige vrijheid — onbeperkte eigen modules
+    // 4. Vorm & positie
     // ========================================================
-    let group_freedom = PreferencesGroup::builder()
-        .title("♾️ Volledige vrijheid (Power User)")
-        .description("Plaats je eigen .qml-modules in de modules-map — Zenith toont ze automatisch en onbeperkt op je statusbalk, naast de ingebouwde modules.")
-        .build();
+    let init = shell_state.borrow().clone();
+    let px = |v: f64| format!("{} px", v);
+    let pct = |v: f64| format!("{:.0}%", v * 100.0);
 
-    // Module-map openen
-    let row_modules = ActionRow::builder()
-        .title("📂 Eigen modules-map openen")
-        .subtitle("~/.config/quickshell/modules  —  elke .qml die je hierin plaatst is meteen beschikbaar")
+    let group_geom = PreferencesGroup::builder().title(&tr.bar_styling).description(&tr.sb_geom_desc).build();
+
+    let styles = ["unified", "islands", "minimal"];
+    let row_style = ComboRow::builder()
+        .title(tr.bar_style.as_str())
+        .subtitle(tr.sb_style_sub.as_str())
+        .model(&StringList::new(&[&tr.sb_style_unified, &tr.sb_style_islands, &tr.sb_style_minimal]))
+        .selected(styles.iter().position(|s| *s == init.layout.bar_style).unwrap_or(0) as u32)
         .build();
-    let btn_modules = Button::builder()
-        .label(tr.common_open_folder.as_str())
-        .valign(gtk4::Align::Center)
-        .build();
-    let modules_dir = ZenithShellConfig::modules_dir().unwrap_or_default();
-    btn_modules.connect_clicked(move |_| {
-        let _ = std::process::Command::new("xdg-open").arg(&modules_dir).spawn();
+    let c = Rc::clone(&commit);
+    row_style.connect_selected_notify(move |r| {
+        let v = styles[r.selected() as usize % styles.len()];
+        c(&|sh| sh.layout.bar_style = v.to_string());
     });
-    row_modules.add_suffix(&btn_modules);
-    group_freedom.add(&row_modules);
-
-    // Aantal ontdekte custom modules (bewijst dat er geen limiet is)
-    let custom_count = shell_state.borrow().discover_modules_for_instance()
-        .iter()
-        .filter(|m| m.is_custom)
-        .count();
-    let row_count = ActionRow::builder()
-        .title("🔍 Actief ontdekte eigen modules")
-        .subtitle(format!(
-            "{} in gebruik — voeg er onbeperkt bij via de modules-map.",
-            custom_count
-        ))
-        .build();
-    group_freedom.add(&row_count);
-
-    // Hint over custom script modules
-    let row_hint = ActionRow::builder()
-        .title("💡 Tip: volledige Quickshell-kracht")
-        .subtitle("Wil je nog meer? Maak hierboven een Custom Script-module of bewerk je eigen shell.qml. Zenith is een laag over Quickshell, niet een beperking ervan.")
-        .build();
-    group_freedom.add(&row_hint);
-
-    page.add(&group_freedom);
-
-    // ========================================================
-    // 4. Geometrie & Positie
-    // ========================================================
-    let group_geom = PreferencesGroup::builder()
-        .title(&tr.bar_styling)
-        .description("Afmetingen, architectuur, afronding en zwevende marges")
-        .build();
-
-    let initial_sh = shell_state.borrow().clone();
-
-    // Balk Architectuur
-    let row_style = ActionRow::builder()
-        .title(&tr.bar_style)
-        .subtitle("Kies tussen één doorlopende balk (Unified), losse eilanden (Islands) of Minimal")
-        .build();
-    let style_model = StringList::new(&["Eén Geheel (Unified)", "Losse Eilanden (Islands)", "Minimalistisch (Minimal)"]);
-    let dd_style = DropDown::builder().model(&style_model).valign(gtk4::Align::Center).build();
-    dd_style.set_selected(match initial_sh.layout.bar_style.as_str() { "islands" => 1, "minimal" => 2, _ => 0 });
-    {
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        dd_style.connect_selected_notify(move |d| {
-            let val = match d.selected() { 1 => "islands", 2 => "minimal", _ => "unified" };
-            sh_st.borrow_mut().layout.bar_style = val.to_string();
-            st.borrow_mut().qs_bar_style = val.to_string();
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_style.add_suffix(&dd_style);
     group_geom.add(&row_style);
 
-    // Positie
-    let row_pos = ActionRow::builder().title(&tr.bar_position).build();
-    let pos_model = StringList::new(&["Bovenaan (top)", "Onderaan (bottom)", "Links (left)", "Rechts (right)"]);
-    let dd_pos = DropDown::builder().model(&pos_model).valign(gtk4::Align::Center).build();
-    dd_pos.set_selected(match initial_sh.layout.position.as_str() {
-        "bottom" => 1,
-        "left" => 2,
-        "right" => 3,
-        _ => 0,
+    let positions = ["top", "bottom", "left", "right"];
+    let row_pos = ComboRow::builder()
+        .title(tr.bar_position.as_str())
+        .model(&StringList::new(&[&tr.sb_pos_top, &tr.sb_pos_bottom, &tr.sb_pos_left, &tr.sb_pos_right]))
+        .selected(positions.iter().position(|p| *p == init.layout.position).unwrap_or(0) as u32)
+        .build();
+    let c = Rc::clone(&commit);
+    row_pos.connect_selected_notify(move |r| {
+        let v = positions[r.selected() as usize % positions.len()];
+        c(&|sh| sh.layout.position = v.to_string());
     });
-    {
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        dd_pos.connect_selected_notify(move |d| {
-            let pos_str = match d.selected() {
-                1 => "bottom",
-                2 => "left",
-                3 => "right",
-                _ => "top",
-            };
-            sh_st.borrow_mut().layout.position = pos_str.to_string();
-            st.borrow_mut().qs_position = pos_str.to_string();
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_pos.add_suffix(&dd_pos);
     group_geom.add(&row_pos);
 
-    // Hoogte
-    let row_h = ActionRow::builder()
-        .title(&tr.bar_height)
-        .subtitle(format!("{} px", initial_sh.layout.height))
-        .build();
-    let s_h = Scale::with_range(Orientation::Horizontal, 20.0, 64.0, 2.0);
-    s_h.set_draw_value(false);
-    s_h.set_value(initial_sh.layout.height as f64);
-    s_h.set_width_request(160);
-    {
-        let r_c = row_h.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_h.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} px", v));
-            sh_st.borrow_mut().layout.height = v;
-            st.borrow_mut().qs_height = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
+    // Schuifrijen: (titel, min, max, stap, waarde, setter)
+    type IntSet = fn(&mut ZenithShellConfig, i32);
+    let int_rows: [(&String, f64, f64, f64, i32, IntSet); 7] = [
+        (&tr.bar_height, 20.0, 64.0, 2.0, init.layout.height, |sh, v| sh.layout.height = v),
+        (&tr.sb_rounding, 0.0, 32.0, 1.0, init.styling.rounding, |sh, v| sh.styling.rounding = v),
+        (&tr.sb_pill_rounding, 0.0, 24.0, 1.0, init.styling.pill_rounding, |sh, v| sh.styling.pill_rounding = v),
+        (&tr.sb_margin_h, 0.0, 32.0, 1.0, init.styling.margin_h, |sh, v| sh.styling.margin_h = v),
+        (&tr.sb_margin_v, 0.0, 24.0, 1.0, init.styling.margin_v, |sh, v| sh.styling.margin_v = v),
+        (&tr.sb_spacing, 2.0, 24.0, 1.0, init.styling.module_spacing, |sh, v| sh.styling.module_spacing = v),
+        (&tr.sb_border_width, 0.0, 6.0, 1.0, init.styling.border_width, |sh, v| sh.styling.border_width = v),
+    ];
+    let c = Rc::clone(&commit);
+    group_geom.add(&rows::switch_row(&tr.bar_floating, &tr.sb_floating_sub, init.layout.floating, move |on| c(&|sh| sh.layout.floating = on)));
+    for (title, min, max, step, value, set) in int_rows {
+        let c = Rc::clone(&commit);
+        group_geom.add(&rows::slider_row(title, min, max, step, value as f64, px, move |v| c(&|sh| set(sh, v as i32))));
     }
-    row_h.add_suffix(&s_h);
-    group_geom.add(&row_h);
-
-    // Zwevende Modus
-    let row_flt = ActionRow::builder()
-        .title(&tr.bar_floating)
-        .subtitle("Balk losmaken van de beeldschermrand met marges")
-        .build();
-    let sw_flt = Switch::builder().active(initial_sh.layout.floating).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        sw_flt.connect_state_set(move |_, active| {
-            sh_st.borrow_mut().layout.floating = active;
-            st.borrow_mut().qs_floating = active;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-            gtk4::glib::Propagation::Proceed
-        });
-    }
-    row_flt.add_suffix(&sw_flt);
-    group_geom.add(&row_flt);
-
-    // Afronding
-    let row_rnd = ActionRow::builder()
-        .title("Balkafronding (Radius)")
-        .subtitle(format!("{} px", initial_sh.styling.rounding))
-        .build();
-    let s_rnd = Scale::with_range(Orientation::Horizontal, 0.0, 32.0, 1.0);
-    s_rnd.set_draw_value(false);
-    s_rnd.set_value(initial_sh.styling.rounding as f64);
-    s_rnd.set_width_request(160);
-    {
-        let r_c = row_rnd.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_rnd.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} px", v));
-            sh_st.borrow_mut().styling.rounding = v;
-            st.borrow_mut().qs_rounding = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_rnd.add_suffix(&s_rnd);
-    group_geom.add(&row_rnd);
-
-    // Eiland Afronding
-    let row_prnd = ActionRow::builder()
-        .title("Eiland / Capsule Afronding")
-        .subtitle(format!("{} px", initial_sh.styling.pill_rounding))
-        .build();
-    let s_prnd = Scale::with_range(Orientation::Horizontal, 0.0, 24.0, 1.0);
-    s_prnd.set_draw_value(false);
-    s_prnd.set_value(initial_sh.styling.pill_rounding as f64);
-    s_prnd.set_width_request(160);
-    {
-        let r_c = row_prnd.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_prnd.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} px", v));
-            sh_st.borrow_mut().styling.pill_rounding = v;
-            st.borrow_mut().qs_pill_rounding = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_prnd.add_suffix(&s_prnd);
-    group_geom.add(&row_prnd);
-
-    // Horizontale Marge
-    let row_mh = ActionRow::builder()
-        .title("Horizontale Marge (Zwevend)")
-        .subtitle(format!("{} px", initial_sh.styling.margin_h))
-        .build();
-    let s_mh = Scale::with_range(Orientation::Horizontal, 0.0, 32.0, 1.0);
-    s_mh.set_draw_value(false);
-    s_mh.set_value(initial_sh.styling.margin_h as f64);
-    s_mh.set_width_request(160);
-    {
-        let r_c = row_mh.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_mh.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} px", v));
-            sh_st.borrow_mut().styling.margin_h = v;
-            st.borrow_mut().qs_margin_h = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_mh.add_suffix(&s_mh);
-    group_geom.add(&row_mh);
-
-    // Verticale Marge
-    let row_mv = ActionRow::builder()
-        .title("Verticale Marge (Zwevend)")
-        .subtitle(format!("{} px", initial_sh.styling.margin_v))
-        .build();
-    let s_mv = Scale::with_range(Orientation::Horizontal, 0.0, 24.0, 1.0);
-    s_mv.set_draw_value(false);
-    s_mv.set_value(initial_sh.styling.margin_v as f64);
-    s_mv.set_width_request(160);
-    {
-        let r_c = row_mv.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_mv.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} px", v));
-            sh_st.borrow_mut().styling.margin_v = v;
-            st.borrow_mut().qs_margin_v = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_mv.add_suffix(&s_mv);
-    group_geom.add(&row_mv);
-
-    // Module Spacing
-    let row_sp = ActionRow::builder()
-        .title("Afstand Tussen Modules (Spacing)")
-        .subtitle(format!("{} px", initial_sh.styling.module_spacing))
-        .build();
-    let s_sp = Scale::with_range(Orientation::Horizontal, 2.0, 24.0, 1.0);
-    s_sp.set_draw_value(false);
-    s_sp.set_value(initial_sh.styling.module_spacing as f64);
-    s_sp.set_width_request(160);
-    {
-        let r_c = row_sp.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_sp.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} px", v));
-            sh_st.borrow_mut().styling.module_spacing = v;
-            st.borrow_mut().qs_module_spacing = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_sp.add_suffix(&s_sp);
-    group_geom.add(&row_sp);
-
-    // Randdikte
-    let row_bw = ActionRow::builder()
-        .title("Randdikte (Border)")
-        .subtitle(format!("{} px", initial_sh.styling.border_width))
-        .build();
-    let s_bw = Scale::with_range(Orientation::Horizontal, 0.0, 6.0, 1.0);
-    s_bw.set_draw_value(false);
-    s_bw.set_value(initial_sh.styling.border_width as f64);
-    s_bw.set_width_request(160);
-    {
-        let r_c = row_bw.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_bw.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} px", v));
-            sh_st.borrow_mut().styling.border_width = v;
-            st.borrow_mut().qs_border_width = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_bw.add_suffix(&s_bw);
-    group_geom.add(&row_bw);
-
     page.add(&group_geom);
 
     // ========================================================
-    // 4. Kleur & Transparantie
+    // 5. Kleuren & tekst
     // ========================================================
-    let group_colors = PreferencesGroup::builder()
-        .title(crate::ui::escape::pango_escape("Kleuren & Transparantie"))
-        .description("Achtergronden, contrast, accenten en lettergrootte")
-        .build();
-
-    // Achtergrondkleur
-    let row_bg = ActionRow::builder().title("Achtergrondkleur Balk").subtitle("Hex-code of kleurkiezer").build();
-    let ent_bg = Entry::builder().text(&initial_sh.styling.background).width_chars(10).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        ent_bg.connect_changed(move |e| {
-            let val = e.text().to_string();
-            sh_st.borrow_mut().styling.background = val.clone();
-            st.borrow_mut().qs_bg = val.trim_start_matches('#').to_string();
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
+    let group_colors = PreferencesGroup::builder().title(crate::ui::escape::pango_escape(&tr.sb_colors)).description(&tr.sb_colors_desc).build();
+    type ColorSet = fn(&mut ZenithShellConfig, String);
+    let color_rows: [(&String, &str, &str, ColorSet); 5] = [
+        (&tr.sb_bg, "", &init.styling.background, |sh, v| sh.styling.background = v),
+        (&tr.sb_pill_bg, "", &init.styling.pill_bg, |sh, v| sh.styling.pill_bg = v),
+        (&tr.sb_accent, &tr.sb_accent_sub, &init.styling.accent, |sh, v| sh.styling.accent = v),
+        (&tr.sb_text, "", &init.styling.text_color, |sh, v| sh.styling.text_color = v),
+        (&tr.sb_border_color, "", &init.styling.border_color, |sh, v| sh.styling.border_color = v),
+    ];
+    for (title, sub, hex, set) in color_rows {
+        let c = Rc::clone(&commit);
+        group_colors.add(&rows::color_row(title, sub, hex, move |hex| c(&|sh| set(sh, format!("#{}", hex)))));
     }
-    row_bg.add_suffix(&ent_bg);
-    group_colors.add(&row_bg);
-
-    // Transparantie Balk
-    let row_op = ActionRow::builder()
-        .title("Balk Dekking (Opacity)")
-        .subtitle(format!("{:.0}%", initial_sh.styling.opacity * 100.0))
-        .build();
-    let s_op = Scale::with_range(Orientation::Horizontal, 0.10, 1.0, 0.05);
-    s_op.set_draw_value(false);
-    s_op.set_value(initial_sh.styling.opacity);
-    s_op.set_width_request(160);
-    {
-        let r_c = row_op.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_op.connect_value_changed(move |s| {
-            let v = s.value();
-            r_c.set_subtitle(&format!("{:.0}%", v * 100.0));
-            sh_st.borrow_mut().styling.opacity = v;
-            st.borrow_mut().qs_opacity = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_op.add_suffix(&s_op);
-    group_colors.add(&row_op);
-
-    // Eiland Achtergrondkleur
-    let row_pbg = ActionRow::builder().title("Eiland Achtergrond (Pill BG)").subtitle("Hex-kleur van de capsule-eilanden").build();
-    let ent_pbg = Entry::builder().text(&initial_sh.styling.pill_bg).width_chars(10).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        ent_pbg.connect_changed(move |e| {
-            let val = e.text().to_string();
-            sh_st.borrow_mut().styling.pill_bg = val.clone();
-            st.borrow_mut().qs_pill_bg = val.trim_start_matches('#').to_string();
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_pbg.add_suffix(&ent_pbg);
-    group_colors.add(&row_pbg);
-
-    // Eiland Transparantie
-    let row_pop = ActionRow::builder()
-        .title("Eiland Dekking (Pill Opacity)")
-        .subtitle(format!("{:.0}%", initial_sh.styling.pill_opacity * 100.0))
-        .build();
-    let s_pop = Scale::with_range(Orientation::Horizontal, 0.10, 1.0, 0.05);
-    s_pop.set_draw_value(false);
-    s_pop.set_value(initial_sh.styling.pill_opacity);
-    s_pop.set_width_request(160);
-    {
-        let r_c = row_pop.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_pop.connect_value_changed(move |s| {
-            let v = s.value();
-            r_c.set_subtitle(&format!("{:.0}%", v * 100.0));
-            sh_st.borrow_mut().styling.pill_opacity = v;
-            st.borrow_mut().qs_pill_opacity = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_pop.add_suffix(&s_pop);
-    group_colors.add(&row_pop);
-
-    // Accentkleur
-    let row_acc = ActionRow::builder().title("Accentkleur").subtitle("Kleur voor actieve werkbladen, iconen en badges").build();
-    let ent_acc = Entry::builder().text(&initial_sh.styling.accent).width_chars(10).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        ent_acc.connect_changed(move |e| {
-            let val = e.text().to_string();
-            sh_st.borrow_mut().styling.accent = val.clone();
-            st.borrow_mut().qs_accent = val.trim_start_matches('#').to_string();
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_acc.add_suffix(&ent_acc);
-    group_colors.add(&row_acc);
-
-    // Tekstkleur
-    let row_tc = ActionRow::builder().title(crate::ui::escape::pango_escape("Tekst- & Icoonkleur")).subtitle("Voorgrondkleur voor tekstlabels").build();
-    let ent_tc = Entry::builder().text(&initial_sh.styling.text_color).width_chars(10).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        ent_tc.connect_changed(move |e| {
-            let val = e.text().to_string();
-            sh_st.borrow_mut().styling.text_color = val.clone();
-            st.borrow_mut().qs_text_color = val.trim_start_matches('#').to_string();
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_tc.add_suffix(&ent_tc);
-    group_colors.add(&row_tc);
-
-    // Randkleur
-    let row_bc = ActionRow::builder().title("Randkleur (Border)").subtitle("Kleur van omlijning van balk en modules").build();
-    let ent_bc = Entry::builder().text(&initial_sh.styling.border_color).width_chars(10).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        ent_bc.connect_changed(move |e| {
-            let val = e.text().to_string();
-            sh_st.borrow_mut().styling.border_color = val.clone();
-            st.borrow_mut().qs_border_color = val.trim_start_matches('#').to_string();
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_bc.add_suffix(&ent_bc);
-    group_colors.add(&row_bc);
-
-    // Lettergrootte
-    let row_fs = ActionRow::builder()
-        .title("Lettergrootte (Font Size)")
-        .subtitle(format!("{} pt", initial_sh.styling.font_size))
-        .build();
-    let s_fs = Scale::with_range(Orientation::Horizontal, 8.0, 18.0, 1.0);
-    s_fs.set_draw_value(false);
-    s_fs.set_value(initial_sh.styling.font_size as f64);
-    s_fs.set_width_request(160);
-    {
-        let r_c = row_fs.clone();
-        let sh_st = Rc::clone(&shell_state);
-        let st = Rc::clone(state);
-        s_fs.connect_value_changed(move |s| {
-            let v = s.value().round() as i32;
-            r_c.set_subtitle(&format!("{} pt", v));
-            sh_st.borrow_mut().styling.font_size = v;
-            st.borrow_mut().qs_font_size = v;
-            themes::sync_shell_config(&sh_st.borrow());
-            config::save_config(&st.borrow());
-        });
-    }
-    row_fs.add_suffix(&s_fs);
-    group_colors.add(&row_fs);
-
+    let c = Rc::clone(&commit);
+    group_colors.add(&rows::slider_row(&tr.sb_opacity, 0.10, 1.0, 0.05, init.styling.opacity, pct, move |v| c(&|sh| sh.styling.opacity = v)));
+    let c = Rc::clone(&commit);
+    group_colors.add(&rows::slider_row(&tr.sb_pill_opacity, 0.10, 1.0, 0.05, init.styling.pill_opacity, pct, move |v| c(&|sh| sh.styling.pill_opacity = v)));
+    let c = Rc::clone(&commit);
+    group_colors.add(&rows::slider_row(&tr.sb_font_size, 8.0, 18.0, 1.0, init.styling.font_size as f64, |v| format!("{} pt", v), move |v| c(&|sh| sh.styling.font_size = v as i32)));
     page.add(&group_colors);
 
     // ========================================================
-    // 5. Panels & On-Screen Displays (OSD)
+    // 6. Panelen & pop-ups
     // ========================================================
-    let group_panels = PreferencesGroup::builder()
-        .title(crate::ui::escape::pango_escape("Panels & On-Screen Displays (OSD)"))
-        .description("Schakel dynamische overlays, popups en systeemnotificaties in of uit")
-        .build();
-
-    let row_p_qs = ActionRow::builder()
-        .title("Quick Settings Paneel")
-        .subtitle("Geïntegreerd Quickshell popup-paneel voor audio, netwerk en helderheid")
-        .build();
-    let sw_p_qs = Switch::builder().active(initial_sh.panels.quick_settings).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        sw_p_qs.connect_state_set(move |_, active| {
-            sh_st.borrow_mut().panels.quick_settings = active;
-            themes::sync_shell_config(&sh_st.borrow());
-            gtk4::glib::Propagation::Proceed
-        });
+    let group_panels = PreferencesGroup::builder().title(crate::ui::escape::pango_escape(&tr.sb_panels)).description(&tr.sb_panels_desc).build();
+    type BoolSet = fn(&mut ZenithShellConfig, bool);
+    let panel_rows: [(&String, &String, bool, BoolSet); 5] = [
+        (&tr.sb_p_qs, &tr.sb_p_qs_sub, init.panels.quick_settings, |sh, v| sh.panels.quick_settings = v),
+        (&tr.sb_p_cc, &tr.sb_p_cc_sub, init.panels.control_center, |sh, v| sh.panels.control_center = v),
+        (&tr.sb_p_vosd, &tr.sb_p_vosd_sub, init.panels.volume_osd, |sh, v| sh.panels.volume_osd = v),
+        (&tr.sb_p_bosd, &tr.sb_p_bosd_sub, init.panels.brightness_osd, |sh, v| sh.panels.brightness_osd = v),
+        (&tr.sb_p_notif, &tr.sb_p_notif_sub, init.panels.notifications, |sh, v| sh.panels.notifications = v),
+    ];
+    for (title, sub, active, set) in panel_rows {
+        let c = Rc::clone(&commit);
+        group_panels.add(&rows::switch_row(title, sub, active, move |on| c(&|sh| set(sh, on))));
     }
-    row_p_qs.add_suffix(&sw_p_qs);
-    group_panels.add(&row_p_qs);
-
-    let row_p_cc = ActionRow::builder().title("Control Center Integratie").subtitle("Toegang tot snelinstellingen via quickshell").build();
-    let sw_p_cc = Switch::builder().active(initial_sh.panels.control_center).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        sw_p_cc.connect_state_set(move |_, active| {
-            sh_st.borrow_mut().panels.control_center = active;
-            themes::sync_shell_config(&sh_st.borrow());
-            gtk4::glib::Propagation::Proceed
-        });
-    }
-    row_p_cc.add_suffix(&sw_p_cc);
-    group_panels.add(&row_p_cc);
-
-    let row_p_vosd = ActionRow::builder().title("Volume OSD Overlay").subtitle("Toon een floating overlay indicator bij volumewijzigingen").build();
-    let sw_p_vosd = Switch::builder().active(initial_sh.panels.volume_osd).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        sw_p_vosd.connect_state_set(move |_, active| {
-            sh_st.borrow_mut().panels.volume_osd = active;
-            themes::sync_shell_config(&sh_st.borrow());
-            gtk4::glib::Propagation::Proceed
-        });
-    }
-    row_p_vosd.add_suffix(&sw_p_vosd);
-    group_panels.add(&row_p_vosd);
-
-    let row_p_bosd = ActionRow::builder().title("Helderheid OSD Overlay").subtitle("Toon een floating overlay bij het verstellen van de helderheid").build();
-    let sw_p_bosd = Switch::builder().active(initial_sh.panels.brightness_osd).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        sw_p_bosd.connect_state_set(move |_, active| {
-            sh_st.borrow_mut().panels.brightness_osd = active;
-            themes::sync_shell_config(&sh_st.borrow());
-            gtk4::glib::Propagation::Proceed
-        });
-    }
-    row_p_bosd.add_suffix(&sw_p_bosd);
-    group_panels.add(&row_p_bosd);
-
-    let row_p_notif = ActionRow::builder().title("Notificaties Overlay").subtitle("Geïntegreerde quickshell notificatiewidgets").build();
-    let sw_p_notif = Switch::builder().active(initial_sh.panels.notifications).valign(gtk4::Align::Center).build();
-    {
-        let sh_st = Rc::clone(&shell_state);
-        sw_p_notif.connect_state_set(move |_, active| {
-            sh_st.borrow_mut().panels.notifications = active;
-            themes::sync_shell_config(&sh_st.borrow());
-            gtk4::glib::Propagation::Proceed
-        });
-    }
-    row_p_notif.add_suffix(&sw_p_notif);
-    group_panels.add(&row_p_notif);
-
     page.add(&group_panels);
 
     // ========================================================
-    // 6. Power User Hub & Grenzeloos Hacken
+    // 7. Geavanceerd: bestanden en eigen QML
     // ========================================================
-    let group_power = PreferencesGroup::builder()
-        .title(crate::ui::escape::pango_escape("Power User Hub & Custom Modules"))
-        .description("Directe toegang voor ontwikkelaars: bewerk ruwe bestanden of voeg eigen QML componenten toe zonder beperkingen")
-        .build();
+    let group_power = PreferencesGroup::builder().title(&tr.sb_power).description(&tr.sb_power_desc).build();
+    let home = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default());
+    let qs_dir = home.join(".config/quickshell");
+    for (title, sub, path) in [
+        (&tr.sb_mod_dir, tr.sb_mod_dir_sub.clone(), qs_dir.join("modules")),
+        (&tr.sb_json, "~/.config/quickshell/zenith-shell.json".to_string(), qs_dir.join("zenith-shell.json")),
+        (&tr.sb_qml, "~/.config/quickshell/shell.qml".to_string(), qs_dir.join("shell.qml")),
+    ] {
+        let row = ActionRow::builder().title(title.as_str()).subtitle(sub).build();
+        let btn = Button::builder().label(tr.sb_open.as_str()).valign(gtk4::Align::Center).build();
+        btn.connect_clicked(move |_| {
+            let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+        });
+        row.add_suffix(&btn);
+        group_power.add(&row);
+    }
 
-    let row_mod_dir = ActionRow::builder()
-        .title("Aangepaste Modules Map")
-        .subtitle("Plaats elk willekeurig .qml widget in ~/.config/quickshell/modules/")
-        .build();
-    let btn_mod_dir = Button::builder().label("Open Map").valign(gtk4::Align::Center).build();
-    btn_mod_dir.connect_clicked(|_| {
-        let home = std::env::var("HOME").unwrap_or_default();
-        let path = format!("{}/.config/quickshell/modules", home);
-        let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
-    });
-    row_mod_dir.add_suffix(&btn_mod_dir);
-    group_power.add(&row_mod_dir);
-
-    let row_tmpl = ActionRow::builder()
-        .title("Nieuwe Custom Module Maken")
-        .subtitle("Maak direct een nieuw CustomWidget.qml template aan in je modules-map")
-        .build();
-    let btn_tmpl = Button::builder().label("Template Aanmaken").valign(gtk4::Align::Center).build();
+    let row_tmpl = ActionRow::builder().title(tr.sb_tmpl.as_str()).subtitle(tr.sb_tmpl_sub.as_str()).build();
+    let btn_tmpl = Button::builder().label(tr.sb_tmpl_btn.as_str()).valign(gtk4::Align::Center).build();
     {
-        let refresh_mod = Rc::clone(&refresh_all_modules);
-        let ref_pick = Rc::clone(&refresh_picker_models);
+        let (ra, rp, dir) = (Rc::clone(&refresh_all_modules), Rc::clone(&refresh_picker_models), qs_dir.join("modules"));
         btn_tmpl.connect_clicked(move |_| {
-            let home = std::env::var("HOME").unwrap_or_default();
-            let dest = format!("{}/.config/quickshell/modules/CustomWidget.qml", home);
-            if !std::path::Path::new(&dest).exists() {
-                let example = format!("{}/.config/quickshell/modules/CustomWidget.qml.example", home);
-                if std::path::Path::new(&example).exists() {
+            let dest = dir.join("CustomWidget.qml");
+            if !dest.exists() {
+                let example = dir.join("CustomWidget.qml.example");
+                if example.exists() {
                     let _ = std::fs::copy(&example, &dest);
                 } else {
+                    let _ = std::fs::create_dir_all(&dir);
                     let boilerplate = "import QtQuick\nimport QtQuick.Layouts\n\nRectangle {\n    implicitWidth: txt.implicitWidth + 16\n    implicitHeight: 22\n    radius: 6\n    color: Qt.alpha(root.themeAccent || \"#89b4fa\", 0.20)\n    border.color: root.themeAccent || \"#89b4fa\"\n    border.width: 1\n    Text { id: txt; anchors.centerIn: parent; text: \"✨ Custom Widget\"; color: root.fgColor || \"#cdd6f4\"; font.pixelSize: root.userFontSize || 11 }\n}\n";
                     let _ = std::fs::write(&dest, boilerplate);
                 }
             }
             let _ = std::process::Command::new("xdg-open").arg(&dest).spawn();
-            refresh_mod();
-            ref_pick();
+            ra();
+            rp();
         });
     }
     row_tmpl.add_suffix(&btn_tmpl);
     group_power.add(&row_tmpl);
 
-    let row_json = ActionRow::builder()
-        .title("zenith-shell.json Config Bewerken")
-        .subtitle("Open het centrale data-gedreven configuratiebestand in je editor")
-        .build();
-    let btn_json = Button::builder().label("Open JSON").valign(gtk4::Align::Center).build();
-    btn_json.connect_clicked(|_| {
-        let home = std::env::var("HOME").unwrap_or_default();
-        let path = format!("{}/.config/quickshell/zenith-shell.json", home);
-        let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
-    });
-    row_json.add_suffix(&btn_json);
-    group_power.add(&row_json);
-
-    let row_qml = ActionRow::builder()
-        .title("shell.qml Bronbestand")
-        .subtitle("Bekijk of bewerk het dynamische QML root-venster")
-        .build();
-    let btn_qml = Button::builder().label("Open QML").valign(gtk4::Align::Center).build();
-    btn_qml.connect_clicked(|_| {
-        let home = std::env::var("HOME").unwrap_or_default();
-        let path = format!("{}/.config/quickshell/shell.qml", home);
-        let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
-    });
-    row_qml.add_suffix(&btn_qml);
-    group_power.add(&row_qml);
-
-    let row_restart = ActionRow::builder()
-        .title("Quickshell Herstarten")
-        .subtitle("Forceer een volledige herstart van het Quickshell proces")
-        .build();
-    let btn_restart = Button::builder().label("Herstarten").valign(gtk4::Align::Center).build();
-    btn_restart.connect_clicked(|_| {
-        process::set_active_bar("quickshell");
-    });
+    let row_restart = ActionRow::builder().title(tr.sb_restart.as_str()).subtitle(tr.sb_restart_sub.as_str()).build();
+    let btn_restart = Button::builder().label(tr.sb_restart_btn.as_str()).valign(gtk4::Align::Center).build();
+    btn_restart.connect_clicked(|_| process::set_active_bar("quickshell"));
     row_restart.add_suffix(&btn_restart);
     group_power.add(&row_restart);
-
     page.add(&group_power);
 
     page
 }
 
-/// Voegt de "Module Toevoegen" dropdown en knop toe aan een sectiegroep
+fn boxed_list() -> ListBox {
+    ListBox::builder().selection_mode(gtk4::SelectionMode::None).css_classes(["boxed-list"]).build()
+}
+
+/// Klein kleurbolletje als voorbeeld van een stijl.
+fn swatch(hex: &str) -> Label {
+    let l = Label::builder().width_request(14).height_request(14).valign(gtk4::Align::Center).css_classes(["zenith-swatch"]).build();
+    let prov = gtk4::CssProvider::new();
+    prov.load_from_data(&format!("label {{ background-color: {}; }}", hex));
+    #[allow(deprecated)]
+    l.style_context().add_provider(&prov, gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    l
+}
+
+/// Kaart voor een ingebouwde stijl: naam, kleurvoorbeeld, één klik = toepassen.
+fn style_card(style: &BarStyle, state: &Rc<RefCell<ZenithConfig>>, sh: &Shell, rebuild: &Rc<dyn Fn()>, notify: &Notify, tr: &Translations) -> Button {
+    let content = Box::new(Orientation::Vertical, 8);
+    let colors = Box::new(Orientation::Horizontal, 4);
+    colors.set_halign(gtk4::Align::Center);
+    for hex in [&style.styling.background, &style.styling.pill_bg, &style.styling.accent, &style.styling.text_color] {
+        colors.append(&swatch(hex));
+    }
+    content.append(&colors);
+    content.append(&Label::new(Some(&style.name)));
+    let btn = Button::builder().child(&content).css_classes(["zenith-preset"]).build();
+    let (st, sh, rb, nt, msg, s) = (Rc::clone(state), Rc::clone(sh), Rc::clone(rebuild), Rc::clone(notify), format!("{} — {}", style.name, tr.sb_style_applied), style.clone());
+    btn.connect_clicked(move |_| {
+        apply_style(&mut sh.borrow_mut(), &mut st.borrow_mut(), &s);
+        themes::sync_shell_config(&sh.borrow());
+        config::save_config(&st.borrow());
+        nt(&msg);
+        rb();
+    });
+    btn
+}
+
+fn module_labels(sh: &Shell) -> Vec<String> {
+    sh.borrow().discover_modules_for_instance().iter().map(|m| format!("{} {}", m.icon, m.name)).collect()
+}
+
+/// Veilige, unieke id op basis van de naam (bv. "Mijn IP" → "mijn_ip", "mijn_ip_1", …).
+fn unique_script_id(name: &str, existing: &[CustomScriptModule]) -> String {
+    let base: String = name.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+    let base = Some(base.trim_matches('_').to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "custom_script".into());
+    let mut id = base.clone();
+    let mut n = 1;
+    while existing.iter().any(|s| s.id == id) {
+        id = format!("{}_{}", base, n);
+        n += 1;
+    }
+    id
+}
+
+fn slot_list<'a>(sh: &'a mut ZenithShellConfig, slot: &str) -> Option<&'a mut Vec<String>> {
+    match slot {
+        "left" => Some(&mut sh.modules.left),
+        "center" => Some(&mut sh.modules.center),
+        "right" => Some(&mut sh.modules.right),
+        _ => None,
+    }
+}
+
+/// Voegt de "Module toevoegen"-rij toe aan een gedeelte.
 fn add_module_picker_row(
     group: &PreferencesGroup,
-    slot_name: &'static str,
-    shell_state: &Rc<RefCell<ZenithShellConfig>>,
+    slot: &'static str,
+    shell_state: &Shell,
     list_box: &Rc<ListBox>,
     picker_dropdowns: &Rc<RefCell<Vec<DropDown>>>,
+    tr: &Rc<Translations>,
 ) {
-    let row_add = ActionRow::builder()
-        .title("Nieuwe Module Toevoegen")
-        .subtitle("Kies een ingebouwde module of een ontdekt custom widget")
-        .build();
-
-    let all_modules = shell_state.borrow().discover_modules_for_instance();
-    let labels: Vec<String> = all_modules
-        .iter()
-        .map(|m| format!("{} {}", m.icon, m.name))
-        .collect();
+    let row_add = ActionRow::builder().title(tr.sb_add_module.as_str()).build();
+    let labels = module_labels(shell_state);
     let labels_ref: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
-    let model = StringList::new(&labels_ref);
-
-    let dd = DropDown::builder().model(&model).valign(gtk4::Align::Center).build();
+    let dd = DropDown::builder().model(&StringList::new(&labels_ref)).valign(gtk4::Align::Center).build();
     picker_dropdowns.borrow_mut().push(dd.clone());
 
-    let btn_add = Button::builder().label("➕ Toevoegen").valign(gtk4::Align::Center).build();
-
-    {
-        let sh_st = Rc::clone(shell_state);
-        let list_rc = Rc::clone(list_box);
-        let dd_c = dd.clone();
-        btn_add.connect_clicked(move |_| {
-            let sel = dd_c.selected() as usize;
-            let current_modules = sh_st.borrow().discover_modules_for_instance();
-            if let Some(info) = current_modules.get(sel) {
-                let mut sh = sh_st.borrow_mut();
-                match slot_name {
-                    "left" => sh.modules.left.push(info.id.clone()),
-                    "center" => sh.modules.center.push(info.id.clone()),
-                    "right" => sh.modules.right.push(info.id.clone()),
-                    _ => {}
-                }
-                themes::sync_shell_config(&sh);
-                drop(sh);
-                refresh_slot(&list_rc, slot_name, &sh_st);
+    let btn_add = Button::builder().label(tr.sb_add.as_str()).valign(gtk4::Align::Center).build();
+    let (sh, lb, dd_c, tr) = (Rc::clone(shell_state), Rc::clone(list_box), dd.clone(), Rc::clone(tr));
+    btn_add.connect_clicked(move |_| {
+        let modules = sh.borrow().discover_modules_for_instance();
+        if let Some(info) = modules.get(dd_c.selected() as usize) {
+            let mut cfg = sh.borrow_mut();
+            if let Some(list) = slot_list(&mut cfg, slot) {
+                list.push(info.id.clone());
             }
-        });
-    }
+            themes::sync_shell_config(&cfg);
+            drop(cfg);
+            refresh_slot(&lb, slot, &sh, &tr);
+        }
+    });
 
     row_add.add_suffix(&dd);
     row_add.add_suffix(&btn_add);
     group.add(&row_add);
 }
 
-/// Ververst de rijen in een module slot ListBox
-fn refresh_slot(
-    list_box: &ListBox,
-    slot_name: &'static str,
-    shell_state: &Rc<RefCell<ZenithShellConfig>>,
-) {
-    // Verwijder alle huidige kinderen
+/// Ververst de rijen van één gedeelte (links/midden/rechts).
+fn refresh_slot(list_box: &ListBox, slot: &'static str, shell_state: &Shell, tr: &Rc<Translations>) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
 
     let all_modules = shell_state.borrow().discover_modules_for_instance();
-    let sh = shell_state.borrow();
-    let current_list: Vec<String> = match slot_name {
-        "left" => sh.modules.left.clone(),
-        "center" => sh.modules.center.clone(),
-        "right" => sh.modules.right.clone(),
-        _ => Vec::new(),
-    };
-    let total = current_list.len();
-
-    if total == 0 {
-        let empty_row = ActionRow::builder()
-            .title("(Geen modules actief)")
-            .subtitle("Voeg een module toe met de knop hieronder")
-            .build();
-        list_box.append(&empty_row);
+    let current: Vec<String> = slot_list(&mut shell_state.borrow_mut(), slot).map(|l| l.clone()).unwrap_or_default();
+    if current.is_empty() {
+        list_box.append(&ActionRow::builder().title(tr.sb_no_modules.as_str()).css_classes(["zenith-dim"]).build());
         return;
     }
 
-    for (idx, mod_id) in current_list.iter().enumerate() {
+    let total = current.len();
+    for (idx, mod_id) in current.iter().enumerate() {
         let info = all_modules.iter().find(|m| &m.id == mod_id);
-        let title = match info {
-            Some(i) => format!("{} {}", i.icon, i.name),
-            None => format!("🧩 {}", mod_id),
-        };
-        let desc = match info {
-            Some(i) => i.description.clone(),
-            None => format!("Module ID: {}", mod_id),
-        };
-
+        let title = info.map(|i| format!("{} {}", i.icon, i.name)).unwrap_or_else(|| format!("🧩 {}", mod_id));
+        let desc = info.map(|i| i.description.clone()).unwrap_or_else(|| mod_id.clone());
         let row = ActionRow::builder()
             .title(crate::ui::escape::pango_escape(&title))
             .subtitle(crate::ui::escape::pango_escape(&desc))
             .build();
 
-        // Knop Omhoog (▲)
-        if idx > 0 {
-            let btn_up = Button::builder().label("▲").valign(gtk4::Align::Center).tooltip_text("Naar links/boven verplaatsen").build();
-            let sh_st = Rc::clone(shell_state);
-            let lb = list_box.clone();
-            btn_up.connect_clicked(move |_| {
-                let mut sh = sh_st.borrow_mut();
-                let list = match slot_name {
-                    "left" => &mut sh.modules.left,
-                    "center" => &mut sh.modules.center,
-                    "right" => &mut sh.modules.right,
-                    _ => return,
-                };
-                if idx > 0 && idx < list.len() {
-                    list.swap(idx, idx - 1);
+        // (icoon, tooltip, zichtbaar, actie op de lijst)
+        type Op = fn(&mut Vec<String>, usize);
+        let ops: [(&str, &str, bool, Op); 3] = [
+            ("go-up-symbolic", &tr.sb_move_up, idx > 0, |l, i| if i > 0 && i < l.len() { l.swap(i, i - 1) }),
+            ("go-down-symbolic", &tr.sb_move_down, idx + 1 < total, |l, i| if i + 1 < l.len() { l.swap(i, i + 1) }),
+            ("list-remove-symbolic", &tr.sb_remove, true, |l, i| if i < l.len() { l.remove(i); }),
+        ];
+        for (icon, tip, visible, op) in ops {
+            let btn = Button::builder().icon_name(icon).tooltip_text(tip).valign(gtk4::Align::Center).css_classes(["flat"]).build();
+            btn.set_sensitive(visible);
+            let (sh, lb, tr) = (Rc::clone(shell_state), list_box.clone(), Rc::clone(tr));
+            btn.connect_clicked(move |_| {
+                let mut cfg = sh.borrow_mut();
+                if let Some(list) = slot_list(&mut cfg, slot) {
+                    op(list, idx);
                 }
-                themes::sync_shell_config(&sh);
-                drop(sh);
-                refresh_slot(&lb, slot_name, &sh_st);
+                themes::sync_shell_config(&cfg);
+                drop(cfg);
+                refresh_slot(&lb, slot, &sh, &tr);
             });
-            row.add_suffix(&btn_up);
+            row.add_suffix(&btn);
         }
-
-        // Knop Omlaag (▼)
-        if idx + 1 < total {
-            let btn_down = Button::builder().label("▼").valign(gtk4::Align::Center).tooltip_text("Naar rechts/onder verplaatsen").build();
-            let sh_st = Rc::clone(shell_state);
-            let lb = list_box.clone();
-            btn_down.connect_clicked(move |_| {
-                let mut sh = sh_st.borrow_mut();
-                let list = match slot_name {
-                    "left" => &mut sh.modules.left,
-                    "center" => &mut sh.modules.center,
-                    "right" => &mut sh.modules.right,
-                    _ => return,
-                };
-                if idx + 1 < list.len() {
-                    list.swap(idx, idx + 1);
-                }
-                themes::sync_shell_config(&sh);
-                drop(sh);
-                refresh_slot(&lb, slot_name, &sh_st);
-            });
-            row.add_suffix(&btn_down);
-        }
-
-        // Knop Verwijderen (✖)
-        let btn_remove = Button::builder().label("✖").valign(gtk4::Align::Center).tooltip_text("Van statusbalk verwijderen").build();
-        btn_remove.add_css_class("destructive-action");
-        {
-            let sh_st = Rc::clone(shell_state);
-            let lb = list_box.clone();
-            btn_remove.connect_clicked(move |_| {
-                let mut sh = sh_st.borrow_mut();
-                let list = match slot_name {
-                    "left" => &mut sh.modules.left,
-                    "center" => &mut sh.modules.center,
-                    "right" => &mut sh.modules.right,
-                    _ => return,
-                };
-                if idx < list.len() {
-                    list.remove(idx);
-                }
-                themes::sync_shell_config(&sh);
-                drop(sh);
-                refresh_slot(&lb, slot_name, &sh_st);
-            });
-        }
-        row.add_suffix(&btn_remove);
-
         list_box.append(&row);
     }
 }
 
-/// Ververst de lijst met custom commando scriptmodules
-fn refresh_scripts_list(
-    list_box: &ListBox,
-    shell_state: &Rc<RefCell<ZenithShellConfig>>,
-    refresh_all_modules: &Rc<dyn Fn()>,
-    refresh_picker_models: &Rc<dyn Fn()>,
-) {
-    // Verwijder alle huidige kinderen
+/// Ververst de lijst met scriptmodules.
+fn refresh_scripts_list(list_box: &ListBox, shell_state: &Shell, refresh_all: &Rc<dyn Fn()>, refresh_pickers: &Rc<dyn Fn()>, tr: &Rc<Translations>) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
 
-    let sh = shell_state.borrow();
-    if sh.custom_scripts.is_empty() {
-        let empty_row = ActionRow::builder()
-            .title("(Nog geen custom script modules aangemaakt)")
-            .subtitle("Definieer hieronder een shell-commando om je eigen widget te creëren")
-            .build();
-        list_box.append(&empty_row);
+    let scripts = shell_state.borrow().custom_scripts.clone();
+    if scripts.is_empty() {
+        list_box.append(&ActionRow::builder().title(tr.sb_no_scripts.as_str()).css_classes(["zenith-dim"]).build());
         return;
     }
 
-    for (idx, script) in sh.custom_scripts.iter().enumerate() {
-        let title = format!("{} {} [script:{}]", script.icon, script.name, script.id);
-        let click_info = match &script.on_click {
-            Some(cmd) if !cmd.trim().is_empty() => format!(" | Klik: `{}`", cmd),
-            _ => String::new(),
-        };
-        let desc = format!(
-            "Commando: `{}` | Polling: {}s{}",
-            script.command, script.interval_seconds, click_info
-        );
-
+    for script in scripts {
         let row = ActionRow::builder()
-            .title(crate::ui::escape::pango_escape(&title))
-            .subtitle(crate::ui::escape::pango_escape(&desc))
+            .title(crate::ui::escape::pango_escape(&format!("{} {}", script.icon, script.name)))
+            .subtitle(crate::ui::escape::pango_escape(&format!("{} · {} s", script.command, script.interval_seconds)))
             .build();
-
-        // Knop Verwijderen (✖)
         let btn_remove = Button::builder()
-            .label("✖")
+            .icon_name("user-trash-symbolic")
+            .tooltip_text(tr.sb_remove.as_str())
             .valign(gtk4::Align::Center)
-            .tooltip_text("Verwijder deze custom scriptmodule")
+            .css_classes(["flat"])
             .build();
-        btn_remove.add_css_class("destructive-action");
-
-        {
-            let sh_st = Rc::clone(shell_state);
-            let lb = list_box.clone();
-            let ref_all = Rc::clone(refresh_all_modules);
-            let ref_pick = Rc::clone(refresh_picker_models);
-            let script_id = script.id.clone();
-
-            btn_remove.connect_clicked(move |_| {
-                let mut sh = sh_st.borrow_mut();
-                if idx < sh.custom_scripts.len() {
-                    sh.custom_scripts.remove(idx);
+        let (sh, lb, ra, rp, tr) = (Rc::clone(shell_state), list_box.clone(), Rc::clone(refresh_all), Rc::clone(refresh_pickers), Rc::clone(tr));
+        btn_remove.connect_clicked(move |_| {
+            let mut cfg = sh.borrow_mut();
+            cfg.custom_scripts.retain(|s| s.id != script.id);
+            // Ook actieve plaatsingen op de balk weghalen.
+            let full_id = format!("script:{}", script.id);
+            for slot in ["left", "center", "right"] {
+                if let Some(list) = slot_list(&mut cfg, slot) {
+                    list.retain(|m| m != &full_id);
                 }
-                // Verwijder ook eventuele actieve instanties op de balk
-                let full_id = format!("script:{}", script_id);
-                sh.modules.left.retain(|m| m != &full_id);
-                sh.modules.center.retain(|m| m != &full_id);
-                sh.modules.right.retain(|m| m != &full_id);
-
-                themes::sync_shell_config(&sh);
-                drop(sh);
-
-                refresh_scripts_list(&lb, &sh_st, &ref_all, &ref_pick);
-                ref_all();
-                ref_pick();
-            });
-        }
-
+            }
+            themes::sync_shell_config(&cfg);
+            drop(cfg);
+            refresh_scripts_list(&lb, &sh, &ra, &rp, &tr);
+            ra();
+            rp();
+        });
         row.add_suffix(&btn_remove);
         list_box.append(&row);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unique_script_id_is_safe_and_unique() {
+        let mk = |id: &str| CustomScriptModule { id: id.into(), name: String::new(), icon: String::new(), command: String::new(), interval_seconds: 5, on_click: None };
+        assert_eq!(unique_script_id("Mijn IP!", &[]), "mijn_ip");
+        assert_eq!(unique_script_id("Mijn IP", &[mk("mijn_ip"), mk("mijn_ip_1")]), "mijn_ip_2");
+        assert_eq!(unique_script_id("  ", &[]), "custom_script");
+    }
+
+    #[test]
+    fn apply_style_mirrors_to_legacy_config() {
+        let mut sh = ZenithShellConfig::default();
+        let mut cfg = ZenithConfig::default();
+        let style = &shell_config::builtin_bar_styles()[4];
+        apply_style(&mut sh, &mut cfg, style);
+        assert_eq!(sh.layout.position, "bottom");
+        assert_eq!(cfg.qs_position, "bottom");
+        assert_eq!(cfg.qs_accent, style.styling.accent.trim_start_matches('#'));
+        assert_eq!(sh.modules, style.modules);
     }
 }

@@ -176,3 +176,8 @@ scale {
     background-color: alpha(var(--accent-color), 0.12);
     border-color: alpha(var(--accent-color), 0.45);
 }
+
+.zenith-swatch {
+    border-radius: 9999px;
+    border: 1px solid alpha(var(--window-fg-color), 0.25);
+}

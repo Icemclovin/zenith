@@ -8,4 +8,5 @@ pub mod keybinds_designer;
 pub mod lockscreen_designer;
 pub mod osd_designer;
 pub mod quickshell_designer;
+pub mod rows;
 pub mod window;

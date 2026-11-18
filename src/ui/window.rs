@@ -1,7 +1,6 @@
-use gtk4::gdk::RGBA;
 use gtk4::prelude::*;
 use gtk4::{
-    Box, Button, ColorDialog, ColorDialogButton, DropDown, Entry, FileDialog, Image, Label, ListBox,
+    Box, Button, DropDown, Entry, FileDialog, Image, Label, ListBox,
     ListBoxRow, Orientation, Scale, StringList, Switch,
 };
 use libadwaita::prelude::*;
@@ -15,6 +14,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use crate::backend::{config, hyprland, ipc_client, process, themes, waybar};
 use crate::backend::{i18n, palette, shell_config::ZenithShellConfig};
+use crate::ui::rows;
 
 pub fn build_window(app: &Application) {
     let initial_cfg = config::load_config();
@@ -141,7 +141,7 @@ fn rebuild(window: &ApplicationWindow, app: &Application, state: &State, lang: &
     });
 }
 
-/// Schuifrij met de waarde ernaast; `apply` zet het veld en past het live toe, daarna wordt opgeslagen.
+/// Rijen voor ZenithConfig: `apply` zet het veld en past live toe, daarna wordt opgeslagen.
 #[allow(clippy::too_many_arguments)]
 fn slider_row(
     title: &str, min: f64, max: f64, step: f64, value: f64,
@@ -149,51 +149,27 @@ fn slider_row(
     state: &State,
     apply: impl Fn(&mut config::ZenithConfig, f64) + 'static,
 ) -> ActionRow {
-    let row = ActionRow::builder().title(title).build();
-    let value_lbl = Label::builder().label(fmt(value)).width_chars(6).xalign(1.0).css_classes(["dim-label", "numeric"]).build();
-    let scale = Scale::with_range(Orientation::Horizontal, min, max, step);
-    scale.set_draw_value(false);
-    scale.set_value(value);
-    scale.set_width_request(240);
-    scale.update_property(&[gtk4::accessible::Property::Label(title)]);
     let st = Rc::clone(state);
-    let lbl = value_lbl.clone();
-    scale.connect_value_changed(move |s| {
-        let v = if step >= 1.0 { s.value().round() } else { s.value() };
-        lbl.set_label(&fmt(v));
+    rows::slider_row(title, min, max, step, value, fmt, move |v| {
         apply(&mut st.borrow_mut(), v);
         config::save_config(&st.borrow());
-    });
-    row.add_suffix(&scale);
-    row.add_suffix(&value_lbl);
-    row
+    })
 }
 
 fn switch_row(title: &str, subtitle: &str, active: bool, state: &State, apply: impl Fn(&mut config::ZenithConfig, bool) + 'static) -> SwitchRow {
-    let row = SwitchRow::builder().title(title).subtitle(subtitle).active(active).build();
     let st = Rc::clone(state);
-    row.connect_active_notify(move |r| {
-        apply(&mut st.borrow_mut(), r.is_active());
+    rows::switch_row(title, subtitle, active, move |on| {
+        apply(&mut st.borrow_mut(), on);
         config::save_config(&st.borrow());
-    });
-    row
+    })
 }
 
 fn color_row(title: &str, hex: &str, state: &State, apply: impl Fn(&mut config::ZenithConfig, String) + 'static) -> ActionRow {
-    let row = ActionRow::builder().title(title).build();
-    let btn = ColorDialogButton::builder()
-        .dialog(&ColorDialog::builder().title(title).with_alpha(false).build())
-        .valign(gtk4::Align::Center)
-        .build();
-    btn.set_rgba(&hex_to_rgba(hex));
     let st = Rc::clone(state);
-    btn.connect_notify_local(Some("rgba"), move |b, _| {
-        apply(&mut st.borrow_mut(), rgba_to_hex(&b.rgba()));
+    rows::color_row(title, "", hex, move |hex| {
+        apply(&mut st.borrow_mut(), hex);
         config::save_config(&st.borrow());
-    });
-    row.add_suffix(&btn);
-    row.set_activatable_widget(Some(&btn));
-    row
+    })
 }
 
 fn build_window_content(
@@ -1039,7 +1015,19 @@ fn build_window_content(
     // ========================================================
     // PAGINA 3: Statusbalk (Quickshell Designer + Waybar Fallback)
     // ========================================================
-    let page_qs = crate::ui::quickshell_designer::build_quickshell_page(state, &tr);
+    let qs_rebuild: Rc<dyn Fn()> = {
+        let (win, app_c, st, lang_c) = (window.downgrade(), app.clone(), Rc::clone(state), lang.clone());
+        Rc::new(move || {
+            if let Some(w) = win.upgrade() {
+                rebuild(&w, &app_c, &st, &lang_c, "statusbar");
+            }
+        })
+    };
+    let qs_notify: Rc<dyn Fn(&str)> = {
+        let ov = toasts.clone();
+        Rc::new(move |msg: &str| toast(&ov, msg))
+    };
+    let page_qs = crate::ui::quickshell_designer::build_quickshell_page(state, &tr, qs_rebuild, qs_notify);
 
     let group_wb_layout = PreferencesGroup::builder().title(&tr.wb_title).description(&tr.wb_desc).build();
     let px = |v: f64| format!("{} px", v.round());
@@ -1449,11 +1437,6 @@ fn toast(overlay: &ToastOverlay, msg: &str) {
     overlay.add_toast(t);
 }
 
-fn rgba_to_hex(c: &RGBA) -> String {
-    let ch = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!("{:02x}{:02x}{:02x}", ch(c.red()), ch(c.green()), ch(c.blue()))
-}
-
 /// Navigeer via de zijbalk zodat selectie en pagina altijd synchroon blijven.
 fn navigate(nav_list: &ListBox, id: &str) {
     let mut i = 0;
@@ -1464,18 +1447,6 @@ fn navigate(nav_list: &ListBox, id: &str) {
             return;
         }
         i += 1;
-    }
-}
-
-fn hex_to_rgba(hex: &str) -> RGBA {
-    let clean = hex.trim_start_matches('#');
-    if clean.len() >= 6 {
-        let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(51) as f32 / 255.0;
-        let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(204) as f32 / 255.0;
-        let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(255) as f32 / 255.0;
-        RGBA::builder().red(r).green(g).blue(b).alpha(1.0).build()
-    } else {
-        RGBA::builder().red(0.2).green(0.8).blue(1.0).alpha(1.0).build()
     }
 }
 
