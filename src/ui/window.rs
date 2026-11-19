@@ -282,6 +282,12 @@ fn build_window_content(
         row.set_header(header.as_ref());
     });
 
+    let search = gtk4::SearchEntry::builder()
+        .placeholder_text(tr.search_placeholder.as_str())
+        .margin_start(10).margin_end(10).margin_bottom(6)
+        .build();
+    sidebar.append(&search);
+
     let nav_scroll = gtk4::ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vexpand(true)
@@ -377,8 +383,11 @@ fn build_window_content(
         .build());
     sidebar.append(&prefs_box);
 
+    let advanced_ids: Vec<&'static str> = nav_items.iter().filter(|i| i.advanced).map(|i| i.id).collect();
     let advanced_rows_rc = Rc::new(std::cell::RefCell::new(advanced_rows));
+    let search_for_mode = search.clone();
     sw_mode.connect_active_notify(move |sw| {
+        search_for_mode.set_text("");
         let active = sw.is_active();
         let rows = advanced_rows_rc.borrow();
         for row in rows.iter() {
@@ -1467,6 +1476,40 @@ fn build_window_content(
     let page_backup = crate::ui::backup_designer::build_backup_page(&tr);
     stack.add_titled(&page_backup, Some("backup"), &tr.sidebar_backup);
 
+    // Zoeken (zoals in Noctalia): toon alleen pagina's waarvan de titel of een instelling matcht.
+    // Paginatekst één keer indexeren; bij een taalwissel wordt het hele venster herbouwd.
+    let index: Vec<(String, String)> = nav_items.iter().map(|i| {
+        let mut text = i.title.to_lowercase();
+        if let Some(page) = stack.child_by_name(i.id) {
+            collect_label_text(&page, &mut text);
+        }
+        (i.id.to_string(), text)
+    }).collect();
+    let nav_for_search = nav_list.clone();
+    let sw_for_search = sw_mode.clone();
+    search.connect_search_changed(move |entry| {
+        let q = entry.text().trim().to_lowercase();
+        let mut first_match = None;
+        for (i, (id, text)) in index.iter().enumerate() {
+            let Some(row) = nav_for_search.row_at_index(i as i32) else { continue };
+            let visible = if q.is_empty() {
+                sw_for_search.is_active() || !advanced_ids.contains(&id.as_str())
+            } else {
+                text.contains(&q)
+            };
+            row.set_visible(visible);
+            if visible && first_match.is_none() {
+                first_match = Some(row);
+            }
+        }
+        let current_hidden = nav_for_search.selected_row().is_none_or(|r| !r.is_visible());
+        if !q.is_empty() && current_hidden {
+            if let Some(row) = first_match {
+                nav_for_search.select_row(Some(&row));
+            }
+        }
+    });
+
     // Selecteer initiële pagina in de zijbalk
     let mut selected_index = 0;
     for (i, item) in nav_items.iter().enumerate() {
@@ -1488,6 +1531,19 @@ fn toast(overlay: &ToastOverlay, msg: &str) {
     let t = Toast::new(msg);
     t.set_timeout(2);
     overlay.add_toast(t);
+}
+
+/// Alle zichtbare tekst onder `w` (labels van rijen, groepen, knoppen), voor de zoekindex.
+fn collect_label_text(w: &gtk4::Widget, out: &mut String) {
+    if let Some(label) = w.downcast_ref::<Label>() {
+        out.push('\n');
+        out.push_str(&label.text().to_lowercase());
+    }
+    let mut child = w.first_child();
+    while let Some(c) = child {
+        collect_label_text(&c, out);
+        child = c.next_sibling();
+    }
 }
 
 /// Navigeer via de zijbalk zodat selectie en pagina altijd synchroon blijven.

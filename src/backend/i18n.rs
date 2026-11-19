@@ -296,6 +296,7 @@ pub struct Translations {
     // MODUS / WEERGAVE (Basis vs Geavanceerd)
     pub mode_advanced: String,
     pub mode_advanced_desc: String,
+    pub search_placeholder: String,
 
     // DASHBOARD ADDITIONAL
     pub dash_quick_desc: String,
@@ -671,6 +672,7 @@ pub fn get_translations(lang: &Language) -> Translations {
             onb_open_power: "Open Power User".to_string(),
             mode_advanced: "Power User modus".to_string(),
             mode_advanced_desc: "Toon alle geavanceerde pagina's en power-functies".to_string(),
+            search_placeholder: "Zoek instellingen…".to_string(),
             dash_quick_desc: "Test en bedien Quickshell en Hyprland componenten direct".to_string(),
             dash_cc_title: "Control Center Paneel".to_string(),
             dash_cc_sub: "Open of sluit het zwevende controlepaneel".to_string(),
@@ -1023,6 +1025,7 @@ pub fn get_translations(lang: &Language) -> Translations {
             onb_open_power: "Open Power User".to_string(),
             mode_advanced: "Power User mode".to_string(),
             mode_advanced_desc: "Show all advanced pages and power features".to_string(),
+            search_placeholder: "Search settings…".to_string(),
             dash_quick_desc: "Test and control Quickshell and Hyprland components directly".to_string(),
             dash_cc_title: "Control Center Panel".to_string(),
             dash_cc_sub: "Open or close the floating control panel".to_string(),
@@ -1375,6 +1378,7 @@ pub fn get_translations(lang: &Language) -> Translations {
             onb_open_power: "Power User öffnen".to_string(),
             mode_advanced: "Power-User-Modus".to_string(),
             mode_advanced_desc: "Alle erweiterten Seiten und Power-Funktionen anzeigen".to_string(),
+            search_placeholder: "Einstellungen suchen…".to_string(),
             dash_quick_desc: "Quickshell- und Hyprland-Komponenten direkt testen und steuern".to_string(),
             dash_cc_title: "Kontrollzentrum-Panel".to_string(),
             dash_cc_sub: "Schwebendes Kontrollzentrum öffnen oder schließen".to_string(),
@@ -1727,6 +1731,7 @@ pub fn get_translations(lang: &Language) -> Translations {
             onb_open_power: "Abrir Power User".to_string(),
             mode_advanced: "Modo Power User".to_string(),
             mode_advanced_desc: "Mostrar todas las páginas avanzadas y funciones de power user".to_string(),
+            search_placeholder: "Buscar ajustes…".to_string(),
             dash_quick_desc: "Probar y controlar componentes de Quickshell y Hyprland directamente".to_string(),
             dash_cc_title: "Panel del Centro de Control".to_string(),
             dash_cc_sub: "Abrir o cerrar el panel de control flotante".to_string(),
@@ -1916,7 +1921,7 @@ mod tests {
                 icons_title, icons_module_icons, icons_card_icons,
                 common_save, common_cancel, common_reset, common_apply, common_open_folder, common_create_template,
                 lang_select,
-                onb_welcome_title, onb_welcome_desc, onb_core_status, onb_core_status_desc, onb_install, onb_installed, onb_install_all, onb_all_set, onb_power_title, onb_power_desc, onb_open_power, mode_advanced, mode_advanced_desc,
+                onb_welcome_title, onb_welcome_desc, onb_core_status, onb_core_status_desc, onb_install, onb_installed, onb_install_all, onb_all_set, onb_power_title, onb_power_desc, onb_open_power, mode_advanced, mode_advanced_desc, search_placeholder,
                 sidebar_fastfetch, ff_preview, ff_refresh_preview, ff_logo_settings, ff_logo_type, ff_logo_source, ff_modules, ff_add_module, ff_custom_command, ff_cmd_name, ff_cmd_script, ff_styling, ff_separator, ff_save, ff_saved_toast,
                 sidebar_lockscreen, ls_preview, ls_test_preview, ls_lock_now, ls_layout_preset, ls_bg_mode, ls_blur_radius, ls_dim_opacity, ls_clock_format, ls_clock_size, ls_greeting, ls_auth_icon, ls_shake, ls_cards, ls_add_card, ls_save, ls_saved_toast,
                 sidebar_backup, bk_create_title, bk_create_desc, bk_label_title, bk_label_sub, bk_action_title, bk_action_sub, bk_create_btn, bk_status_idle, bk_list_title, bk_list_desc, bk_none_title, bk_none_sub, bk_restore_btn, bk_restore_ok, bk_delete_tip, bk_deleted_ok, bk_error_prefix, bk_err_empty_label, bk_created_ok, bk_done, bk_info_title, bk_location_title, bk_snapshots, bk_files,

@@ -14,6 +14,7 @@ fn write_text_atomic_owned(
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
 pub struct ShellStyling {
     pub background: String,
     pub accent: String,
@@ -73,6 +74,7 @@ impl Default for ShellAnimations {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
 pub struct ShellLayout {
     pub position: String,
     pub height: i32,
@@ -92,6 +94,7 @@ impl Default for ShellLayout {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
 pub struct ShellModules {
     pub left: Vec<String>,
     pub center: Vec<String>,
@@ -127,6 +130,7 @@ impl Default for ShellModules {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
 pub struct ShellPanels {
     #[serde(default)]
     pub quick_settings: bool,
@@ -443,6 +447,7 @@ impl Default for CustomIcons {
 fn default_language() -> String { "nl".to_string() }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
 pub struct ZenithShellConfig {
     pub styling: ShellStyling,
     pub layout: ShellLayout,
@@ -524,7 +529,7 @@ fn mods(ids: &[&str]) -> Vec<String> {
 type PresetRow<'a> = (&'a str, &'a str, &'a str, i32, bool, [&'a str; 5], [i32; 7], f64, f64, &'a [&'a str], &'a [&'a str], &'a [&'a str]);
 
 pub fn builtin_bar_styles() -> Vec<BarStyle> {
-    let rows: [PresetRow; 6] = [
+    let rows: [PresetRow; 8] = [
         ("Zenith Modern", "unified", "top", 38, true, ["#1e1e2e", "#89b4fa", "#181825", "#cdd6f4", "#45475a"], [12, 8, 8, 6, 1, 11, 8], 0.90, 0.85,
          &["launcher", "brand", "workspaces"], &["active_window", "media"], &["cpu", "ram", "battery", "volume", "brightness", "network", "bluetooth", "systray", "clock", "power"]),
         ("Dynamic Islands", "islands", "top", 38, true, ["#1e1e2e", "#cba6f7", "#11111b", "#cdd6f4", "#585b70"], [14, 10, 10, 8, 1, 11, 10], 0.80, 0.88,
@@ -537,6 +542,12 @@ pub fn builtin_bar_styles() -> Vec<BarStyle> {
          &["launcher", "brand"], &["workspaces", "active_window"], &["volume", "brightness", "systray", "clock", "power"]),
         ("Compact Edge", "unified", "top", 28, false, ["#181825", "#89dceb", "#11111b", "#cdd6f4", "#313244"], [0, 4, 0, 0, 0, 10, 6], 1.0, 1.0,
          &["workspaces"], &["active_window"], &["cpu", "ram", "volume", "clock", "power"]),
+        // Material 3-look (zoals DankMaterialShell): zwevende eilanden, ruime afronding, tonale kleuren.
+        ("Material Floating", "islands", "top", 42, true, ["#141218", "#d0bcff", "#211f26", "#e6e0e9", "#49454f"], [22, 16, 12, 8, 0, 11, 10], 0.88, 0.95,
+         &["launcher", "workspaces"], &["clock"], &["media", "systray", "network", "bluetooth", "volume", "battery", "power"]),
+        // Rustige lavendel-nacht (zoals Noctalia): compacte balk, zachte pastels.
+        ("Lavender Night", "unified", "top", 36, true, ["#0e0e1a", "#a9aefe", "#1a1a2e", "#e0e0f8", "#2a2a44"], [14, 10, 8, 6, 1, 11, 8], 0.92, 0.90,
+         &["launcher", "workspaces", "active_window"], &["clock"], &["media", "cpu", "ram", "volume", "brightness", "network", "battery", "systray", "power"]),
     ];
     rows.iter().map(|&(name, style, pos, height, floating, c, n, opacity, pill_opacity, l, m, r)| BarStyle {
         name: name.to_string(),
@@ -623,8 +634,13 @@ impl ZenithShellConfig {
         if let Some(path) = Self::config_path() {
             if path.exists() {
                 if let Ok(content) = read_to_string(&path) {
-                    if let Ok(cfg) = serde_json::from_str::<ZenithShellConfig>(&content) {
-                        return cfg;
+                    match serde_json::from_str::<ZenithShellConfig>(&content) {
+                        Ok(cfg) => return cfg,
+                        // Bewaar het kapotte bestand: de volgende save() overschrijft het met defaults.
+                        Err(e) => {
+                            let _ = std::fs::copy(&path, path.with_extension("json.broken"));
+                            eprintln!("zenith-shell.json ongeldig ({e}); kopie in zenith-shell.json.broken");
+                        }
                     }
                 }
             }
@@ -1032,6 +1048,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn partial_config_keeps_user_values_instead_of_resetting() {
+        let cfg: ZenithShellConfig =
+            serde_json::from_str(r##"{"styling": {"accent": "#ff0000"}, "layout": {"height": 50}}"##).unwrap();
+        assert_eq!(cfg.styling.accent, "#ff0000");
+        assert_eq!(cfg.layout.height, 50);
+        assert_eq!(cfg.styling.background, ShellStyling::default().background);
+        assert_eq!(cfg.modules, ShellModules::default());
+    }
+
+    #[test]
     fn test_shell_config_serialization() {
         let mut cfg = ZenithShellConfig::default();
         cfg.custom_scripts.push(CustomScriptModule {
@@ -1087,7 +1113,7 @@ mod tests {
     #[test]
     fn builtin_bar_styles_are_complete() {
         let styles = builtin_bar_styles();
-        assert_eq!(styles.len(), 6);
+        assert_eq!(styles.len(), 8);
         for s in &styles {
             assert!(s.styling.background.starts_with('#') && s.styling.accent.starts_with('#'));
             assert!(!s.modules.right.is_empty());

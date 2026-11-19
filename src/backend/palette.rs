@@ -87,6 +87,7 @@ pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
     (r, g, b)
 }
 
+#[cfg(test)]
 fn relative_luminance(r: u8, g: u8, b: u8) -> f32 {
     let rs = r as f32 / 255.0;
     let gs = g as f32 / 255.0;
@@ -103,6 +104,7 @@ fn relative_luminance(r: u8, g: u8, b: u8) -> f32 {
     0.2126 * calc(rs) + 0.7152 * calc(gs) + 0.0722 * calc(bs)
 }
 
+#[cfg(test)]
 fn contrast_ratio(r1: u8, g1: u8, b1: u8, r2: u8, g2: u8, b2: u8) -> f32 {
     let l1 = relative_luminance(r1, g1, b1);
     let l2 = relative_luminance(r2, g2, b2);
@@ -111,72 +113,48 @@ fn contrast_ratio(r1: u8, g1: u8, b1: u8, r2: u8, g2: u8, b2: u8) -> f32 {
     (lighter + 0.05) / (darker + 0.05)
 }
 
-#[derive(Debug, Clone, Copy)]
-struct PixelData {
-    h: f32,
-    s: f32,
-    l: f32,
-}
-
+/// Material-You-achtig: kies de dominante kleurtoon (hue) van de wallpaper en leid daar
+/// een tonaal palet van af, zodat achtergrond donker, tekst licht en accent pastel is.
 pub fn extract_palette(image_path: &str) -> Option<WallpaperPalette> {
-    let img = image::open(image_path).ok()?;
-    let resized = image::imageops::resize(&img, 64, 64, FilterType::Nearest);
+    let img = image::open(image_path).ok()?.to_rgb8();
+    let resized = image::imageops::resize(&img, 64, 64, FilterType::Triangle);
 
-    let mut pixels: Vec<PixelData> = vec![];
-    for pixel in resized.pixels() {
-        let r = pixel[0];
-        let g = pixel[1];
-        let b = pixel[2];
-        let (h, s, l) = rgb_to_hsl(r, g, b);
-        pixels.push(PixelData { h, s, l });
+    // Hue-histogram (36 vakjes van 10°), gewogen naar verzadiging en "middentonen".
+    let mut weight = [0f32; 36];
+    let mut hue_sum = [0f32; 36];
+    for px in resized.pixels() {
+        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let w = s * (1.0 - (l - 0.5).abs() * 2.0);
+        let bin = ((h / 10.0) as usize).min(35);
+        weight[bin] += w;
+        hue_sum[bin] += h * w;
     }
+    let best = |skip: Option<usize>| -> Option<usize> {
+        (0..36)
+            .filter(|&i| weight[i] > 0.0)
+            // tweede kleur minstens 40° van de eerste, anders lijkt hij er te veel op
+            .filter(|&i| skip.is_none_or(|j| { let d = i.abs_diff(j); d.min(36 - d) >= 4 }))
+            .max_by(|&a, &b| weight[a].partial_cmp(&weight[b]).unwrap_or(Ordering::Equal))
+    };
+    let mean_hue = |i: usize| hue_sum[i] / weight[i];
 
-    pixels.sort_by(|a, b| a.l.partial_cmp(&b.l).unwrap_or(Ordering::Equal));
+    // Grijze wallpaper: neutraal palet met een rustig blauw accent.
+    let (seed, sat) = match best(None) {
+        Some(i) => (mean_hue(i), 1.0),
+        None => (220.0, 0.0),
+    };
+    let second = best(best(None)).map(mean_hue).unwrap_or((seed + 40.0) % 360.0);
 
-    let bucket_size = pixels.len() / 5;
-    let mut representatives = vec![];
-
-    for i in 0..5 {
-        let start = i * bucket_size;
-        let end = if i == 4 { pixels.len() } else { (i + 1) * bucket_size };
-        let bucket = &pixels[start..end];
-        let rep = bucket.iter().max_by(|a, b| a.s.partial_cmp(&b.s).unwrap_or(Ordering::Equal)).copied().unwrap_or(PixelData { h: 0.0, s: 0.0, l: 0.0 });
-        representatives.push(rep);
-    }
-
-    let reps_with_index: Vec<(usize, PixelData)> = representatives.into_iter().enumerate().collect();
-    let mut sorted_by_sat = reps_with_index.clone();
-    sorted_by_sat.sort_by(|a, b| b.1.s.partial_cmp(&a.1.s).unwrap_or(Ordering::Equal));
-    
-    let primary_idx = sorted_by_sat[0].0;
-    let secondary_idx = sorted_by_sat[1].0;
-    
-    let to_hex = |pd: PixelData| -> String {
-        let (r, g, b) = hsl_to_rgb(pd.h, pd.s, pd.l);
+    let hex = |h: f32, s: f32, l: f32| -> String {
+        let (r, g, b) = hsl_to_rgb(h, s, l);
         format!("#{:02x}{:02x}{:02x}", r, g, b)
     };
-
-    let background = to_hex(reps_with_index[0].1);
-    let surface = to_hex(reps_with_index[1].1);
-    let primary_accent = to_hex(reps_with_index[primary_idx].1);
-    let secondary_accent = to_hex(reps_with_index[secondary_idx].1);
-    
-    let (bg_r, bg_g, bg_b) = hsl_to_rgb(reps_with_index[0].1.h, reps_with_index[0].1.s, reps_with_index[0].1.l);
-    let (fg_r, fg_g, fg_b) = hsl_to_rgb(reps_with_index[4].1.h, reps_with_index[4].1.s, reps_with_index[4].1.l);
-    
-    let contrast = contrast_ratio(bg_r, bg_g, bg_b, fg_r, fg_g, fg_b);
-    let foreground = if contrast < 4.5 {
-        "#cdd6f4".to_string()
-    } else {
-        to_hex(reps_with_index[4].1)
-    };
-
     Some(WallpaperPalette {
-        background,
-        surface,
-        primary_accent,
-        secondary_accent,
-        foreground,
+        background: hex(seed, 0.22 * sat, 0.09),
+        surface: hex(seed, 0.20 * sat, 0.14),
+        primary_accent: hex(seed, 0.65 * sat.max(0.4), 0.74),
+        secondary_accent: hex(second, 0.50 * sat.max(0.3), 0.76),
+        foreground: hex(seed, 0.25 * sat, 0.91),
     })
 }
 
@@ -312,6 +290,31 @@ mod tests {
         assert!(p.primary_accent.starts_with('#') && p.primary_accent.len() == 7);
         assert!(p.secondary_accent.starts_with('#') && p.secondary_accent.len() == 7);
         assert!(p.foreground.starts_with('#') && p.foreground.len() == 7);
+    }
+
+    fn rgb(hex: &str) -> (u8, u8, u8) {
+        let v = u32::from_str_radix(&hex[1..], 16).unwrap();
+        ((v >> 16) as u8, (v >> 8) as u8, v as u8)
+    }
+
+    #[test]
+    fn extracted_palette_is_readable_and_follows_wallpaper() {
+        // Olijfgroene/gele wallpaper gaf vroeger achtergrond == accent (#6b6300).
+        let path = std::env::temp_dir().join("zenith_test_olive.png");
+        let mut img = image::RgbImage::new(16, 16);
+        for (x, _, p) in img.enumerate_pixels_mut() {
+            *p = if x < 12 { image::Rgb([107, 99, 0]) } else { image::Rgb([20, 20, 20]) };
+        }
+        img.save(&path).unwrap();
+        let p = extract_palette(path.to_str().unwrap()).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_ne!(p.background, p.primary_accent);
+        let (b, f, a) = (rgb(&p.background), rgb(&p.foreground), rgb(&p.primary_accent));
+        assert!(contrast_ratio(b.0, b.1, b.2, f.0, f.1, f.2) >= 7.0);
+        assert!(contrast_ratio(b.0, b.1, b.2, a.0, a.1, a.2) >= 4.5);
+        let (h, _, _) = rgb_to_hsl(a.0, a.1, a.2);
+        assert!((50.0..65.0).contains(&h), "accent-hue {h} volgt de wallpaper niet");
     }
 
     #[test]
