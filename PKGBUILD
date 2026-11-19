@@ -38,6 +38,10 @@ depends=(
     'grimblast'
     'hyprland'
 )
+optdepends=(
+    'hyprsunset: nachtlicht-widget in de balk'
+    'power-profiles-daemon: energieprofiel-widget in de balk'
+)
 makedepends=('cargo' 'rust' 'git')
 
 source=("${url}/archive/${_zenith_commit}.tar.gz")

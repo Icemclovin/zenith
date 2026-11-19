@@ -1,6 +1,7 @@
 pub mod backup;
 pub mod bootstrap;
 pub mod config;
+pub mod desktop_widgets;
 pub mod fastfetch;
 pub mod hyprland;
 pub mod i18n;

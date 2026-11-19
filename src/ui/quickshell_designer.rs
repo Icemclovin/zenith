@@ -236,7 +236,7 @@ pub fn build_quickshell_page(
                 return;
             }
             let name = Some(e_name.text().trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "Custom Script".into());
-            let icon = Some(e_icon.text().trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "💻".into());
+            let icon = Some(e_icon.text().trim().to_string()).filter(|s| !s.is_empty()).unwrap_or_default();
             let on_click = Some(e_click.text().trim().to_string()).filter(|s| !s.is_empty());
 
             let mut cfg = sh.borrow_mut();
@@ -364,6 +364,8 @@ pub fn build_quickshell_page(
     group_anim.add(&rows::switch_row(&tr.sb_hover_zoom, &tr.sb_hover_zoom_sub, init.animations.hover_zoom, move |on| c(&|sh| sh.animations.hover_zoom = on)));
     let c = Rc::clone(&commit);
     group_anim.add(&rows::switch_row(&tr.sb_fade_in, &tr.sb_fade_in_sub, init.animations.fade_in, move |on| c(&|sh| sh.animations.fade_in = on)));
+    let c = Rc::clone(&commit);
+    group_anim.add(&rows::switch_row(&tr.sb_icon_anim, &tr.sb_icon_anim_sub, init.animations.icon_anim, move |on| c(&|sh| sh.animations.icon_anim = on)));
     page.add(&group_anim);
 
     // ========================================================
@@ -416,7 +418,7 @@ pub fn build_quickshell_page(
                     let _ = std::fs::copy(&example, &dest);
                 } else {
                     let _ = std::fs::create_dir_all(&dir);
-                    let boilerplate = "import QtQuick\nimport QtQuick.Layouts\n\nRectangle {\n    implicitWidth: txt.implicitWidth + 16\n    implicitHeight: 22\n    radius: 6\n    color: Qt.alpha(root.themeAccent || \"#89b4fa\", 0.20)\n    border.color: root.themeAccent || \"#89b4fa\"\n    border.width: 1\n    Text { id: txt; anchors.centerIn: parent; text: \"✨ Custom Widget\"; color: root.fgColor || \"#cdd6f4\"; font.pixelSize: root.userFontSize || 11 }\n}\n";
+                    let boilerplate = "import QtQuick\nimport QtQuick.Layouts\n\nRectangle {\n    implicitWidth: txt.implicitWidth + 16\n    implicitHeight: 22\n    radius: 6\n    color: Qt.alpha(root.themeAccent || \"#89b4fa\", 0.20)\n    border.color: root.themeAccent || \"#89b4fa\"\n    border.width: 1\n    Text { id: txt; anchors.centerIn: parent; text: \"Custom Widget\"; color: root.fgColor || \"#cdd6f4\"; font.pixelSize: root.userFontSize || 11 }\n}\n";
                     let _ = std::fs::write(&dest, boilerplate);
                 }
             }
@@ -551,7 +553,7 @@ fn refresh_slot(list_box: &ListBox, slot: &'static str, shell_state: &Shell, tr:
     let total = current.len();
     for (idx, mod_id) in current.iter().enumerate() {
         let info = all_modules.iter().find(|m| &m.id == mod_id);
-        let title = info.map(|i| format!("{} {}", i.icon, i.name)).unwrap_or_else(|| format!("🧩 {}", mod_id));
+        let title = info.map(|i| format!("{} {}", i.icon, i.name)).unwrap_or_else(|| mod_id.to_string());
         let desc = info.map(|i| i.description.clone()).unwrap_or_else(|| mod_id.clone());
         let row = ActionRow::builder()
             .title(crate::ui::escape::pango_escape(&title))

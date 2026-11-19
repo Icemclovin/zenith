@@ -241,6 +241,7 @@ fn build_window_content(
         NavItem { id: "themes", title: tr.sidebar_themes.clone(), icon: "preferences-desktop-appearance-symbolic", section: None, advanced: false },
         NavItem { id: "keybinds", title: tr.sidebar_keybinds.clone(), icon: "input-keyboard-symbolic", section: None, advanced: false },
         NavItem { id: "statusbar", title: tr.sidebar_statusbar.clone(), icon: "view-continuous-symbolic", section: Some(tr.nav_group_shell.clone()), advanced: false },
+        NavItem { id: "desktop_widgets", title: tr.sidebar_desktop_widgets.clone(), icon: "user-desktop-symbolic", section: None, advanced: false },
         NavItem { id: "control_center", title: tr.sidebar_control_center.clone(), icon: "view-app-grid-symbolic", section: None, advanced: false },
         NavItem { id: "osd", title: tr.sidebar_osd.clone(), icon: "audio-volume-high-symbolic", section: None, advanced: false },
         NavItem { id: "lockscreen", title: tr.sidebar_lockscreen.clone(), icon: "system-lock-screen-symbolic", section: None, advanced: false },
@@ -452,7 +453,7 @@ fn build_window_content(
     let btn_osd_test = Button::builder().label(tr.dash_test_osd.as_str()).valign(gtk4::Align::Center).build();
     let (ov, msg) = (toasts.clone(), format!("{} — {}", tr.dash_test_osd, tr.toast_done));
     btn_osd_test.connect_clicked(move |_| {
-        process::execute_cmd("quickshell ipc call osd popup '⚡' 'Zenith OS' 0.85");
+        process::execute_cmd("quickshell ipc call osd popup 'brand' 'Zenith OS' 0.85");
         toast(&ov, &msg);
     });
     row_osd_test.add_suffix(&btn_osd_test);
@@ -1139,6 +1140,9 @@ fn build_window_content(
     // ========================================================
     // PAGINA 6: On-Screen Display (OSD) Designer
     // ========================================================
+    let page_desktop = crate::ui::desktop_widgets_designer::build_desktop_widgets_page();
+    stack.add_titled(&page_desktop, Some("desktop_widgets"), &tr.sidebar_desktop_widgets);
+
     let page_osd = crate::ui::osd_designer::build_osd_page(state, &tr);
     stack.add_titled(&page_osd, Some("osd"), &tr.sidebar_osd);
 

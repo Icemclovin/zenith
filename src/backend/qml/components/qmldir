@@ -1,0 +1,3 @@
+singleton ZSettings ZSettings.qml
+ZIcon ZIcon.qml
+ZLabel ZLabel.qml

@@ -65,11 +65,13 @@ pub struct ShellAnimations {
     pub hover_zoom: bool,
     /// Modules faden in bij laden.
     pub fade_in: bool,
+    /// Iconen "poppen" bij wisselen en groeien bij aanwijzen.
+    pub icon_anim: bool,
 }
 
 impl Default for ShellAnimations {
     fn default() -> Self {
-        Self { duration_ms: 250, curve: "OutCubic".to_string(), hover_zoom: true, fade_in: true }
+        Self { duration_ms: 250, curve: "OutCubic".to_string(), hover_zoom: true, fade_in: true, icon_anim: true }
     }
 }
 
@@ -309,7 +311,7 @@ fn default_ls_clock_format() -> String { "hh:mm".to_string() }
 fn default_ls_clock_font_size() -> u32 { 72 }
 fn default_ls_clock_font_family() -> String { "JetBrains Mono".to_string() }
 fn default_ls_greeting() -> String { "Welkom terug, {user}".to_string() }
-fn default_ls_auth_icon() -> String { "🔒".to_string() }
+fn default_ls_auth_icon() -> String { "\u{f0341}".to_string() }
 fn default_ls_cards() -> Vec<String> {
     vec![
         "clock".to_string(),
@@ -354,6 +356,7 @@ pub struct CustomScriptModule {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
 pub struct CustomIcons {
     // Bar modules
     pub workspaces: String,
@@ -400,51 +403,54 @@ pub struct CustomIcons {
 }
 
 impl Default for CustomIcons {
+    /// Nerd Font-glyphs (Material Design-set), getoond in "JetBrainsMono Nerd Font Propo".
     fn default() -> Self {
         Self {
-            workspaces: "🗂️".to_string(),
-            active_window: "🪟".to_string(),
-            clock: "🕒".to_string(),
-            systray: "📥".to_string(),
-            volume_high: "🔊".to_string(),
-            volume_medium: "🔉".to_string(),
-            volume_muted: "🔇".to_string(),
-            brightness: "☀️".to_string(),
-            power: "⏻".to_string(),
-            launcher: "🚀".to_string(),
-            brand: "🌟".to_string(),
-            media: "🎵".to_string(),
-            media_play: "▶".to_string(),
-            media_pause: "⏸".to_string(),
-            media_prev: "⏮".to_string(),
-            media_next: "⏭".to_string(),
-            cpu: "🖥".to_string(),
-            ram: "💾".to_string(),
-            battery_full: "🔋".to_string(),
-            battery_low: "🪫".to_string(),
-            battery_charging: "⚡".to_string(),
-            network: "🌐".to_string(),
-            bluetooth: "ᛒ".to_string(),
-            wifi: "📶".to_string(),
-            dnd_on: "🔕".to_string(),
-            dnd_off: "🔔".to_string(),
-            nightlight: "🌙".to_string(),
-            mic: "🎙️".to_string(),
-            mic_muted: "🎙️❌".to_string(),
-            lock: "🔒".to_string(),
-            sleep: "💤".to_string(),
-            logout: "🚪".to_string(),
-            reboot: "🔄".to_string(),
-            shutdown: "⏻".to_string(),
-            settings: "⚙️".to_string(),
-            script: "💻".to_string(),
-            custom: "✨".to_string(),
-            close: "✕".to_string(),
+            workspaces: "\u{f0a1d}".to_string(),
+            active_window: "\u{f0614}".to_string(),
+            clock: "\u{f0150}".to_string(),
+            systray: "\u{f0120}".to_string(),
+            volume_high: "\u{f057e}".to_string(),
+            volume_medium: "\u{f0580}".to_string(),
+            volume_muted: "\u{f0581}".to_string(),
+            brightness: "\u{f00df}".to_string(),
+            power: "\u{f0425}".to_string(),
+            launcher: "\u{f003b}".to_string(),
+            brand: "\u{f0ae3}".to_string(),
+            media: "\u{f0387}".to_string(),
+            media_play: "\u{f040a}".to_string(),
+            media_pause: "\u{f03e4}".to_string(),
+            media_prev: "\u{f04ae}".to_string(),
+            media_next: "\u{f04ad}".to_string(),
+            cpu: "\u{f0ee0}".to_string(),
+            ram: "\u{f035b}".to_string(),
+            battery_full: "\u{f0079}".to_string(),
+            battery_low: "\u{f12a1}".to_string(),
+            battery_charging: "\u{f0084}".to_string(),
+            network: "\u{f05a9}".to_string(),
+            bluetooth: "\u{f00af}".to_string(),
+            wifi: "\u{f05a9}".to_string(),
+            dnd_on: "\u{f0a91}".to_string(),
+            dnd_off: "\u{f009c}".to_string(),
+            nightlight: "\u{f0594}".to_string(),
+            mic: "\u{f036c}".to_string(),
+            mic_muted: "\u{f036d}".to_string(),
+            lock: "\u{f0341}".to_string(),
+            sleep: "\u{f04b2}".to_string(),
+            logout: "\u{f0343}".to_string(),
+            reboot: "\u{f0709}".to_string(),
+            shutdown: "\u{f0425}".to_string(),
+            settings: "\u{f08bb}".to_string(),
+            script: "\u{f018d}".to_string(),
+            custom: "\u{f0674}".to_string(),
+            close: "\u{f0156}".to_string(),
         }
     }
 }
 
 fn default_language() -> String { "nl".to_string() }
+
+const ICONS_VERSION: u32 = 1;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
@@ -476,6 +482,9 @@ pub struct ZenithShellConfig {
     pub advanced_mode: bool,
     #[serde(default)]
     pub animations: ShellAnimations,
+    /// 0 = oude emoji-iconen; 1 = Nerd Font-glyphs. Zie `load_or_default`.
+    #[serde(default)]
+    pub icons_version: u32,
 }
 
 impl Default for ZenithShellConfig {
@@ -496,6 +505,7 @@ impl Default for ZenithShellConfig {
             lockscreen: LockscreenConfig::default(),
             advanced_mode: false,
             animations: ShellAnimations::default(),
+            icons_version: ICONS_VERSION,
         }
     }
 }
@@ -612,7 +622,7 @@ impl ZenithShellConfig {
                         {
                             found.push(ModuleInfo {
                                 id: stem.to_string(),
-                                name: format!("✨ Custom: {}", stem),
+                                name: format!("Custom: {}", stem),
                                 icon: custom_icon.to_string(),
                                 description: format!("Aangepast QML widget: {}.qml", stem),
                                 is_custom: true,
@@ -635,7 +645,15 @@ impl ZenithShellConfig {
             if path.exists() {
                 if let Ok(content) = read_to_string(&path) {
                     match serde_json::from_str::<ZenithShellConfig>(&content) {
-                        Ok(cfg) => return cfg,
+                        Ok(mut cfg) => {
+                            // Eenmalig: emoji-iconen van oudere versies vervangen door de glyphs.
+                            if cfg.icons_version < ICONS_VERSION {
+                                cfg.custom_icons = CustomIcons::default();
+                                cfg.icons_version = ICONS_VERSION;
+                                let _ = cfg.save();
+                            }
+                            return cfg;
+                        }
                         // Bewaar het kapotte bestand: de volgende save() overschrijft het met defaults.
                         Err(e) => {
                             let _ = std::fs::copy(&path, path.with_extension("json.broken"));
@@ -773,6 +791,55 @@ impl ZenithShellConfig {
                 description: "Bluetooth powerstatus en klik-schakelaar".to_string(),
                 is_custom: false,
             },
+            ModuleInfo {
+                id: "taskbar".to_string(),
+                name: "Taakbalk".to_string(),
+                icon: "\u{f0a1d}".to_string(),
+                description: "Open vensters als app-iconen; klik = focus, middelklik = sluiten".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "microphone".to_string(),
+                name: "Microfoon".to_string(),
+                icon: "\u{f036c}".to_string(),
+                description: "Microfoonvolume; klik = dempen, scrollen = volume".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "keyboard_layout".to_string(),
+                name: "Toetsenbordindeling".to_string(),
+                icon: "\u{f097b}".to_string(),
+                description: "Actieve indeling; klik = volgende indeling".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "keep_awake".to_string(),
+                name: "Wakker houden".to_string(),
+                icon: "\u{f06ca}".to_string(),
+                description: "Voorkomt dat het scherm uitgaat of vergrendelt".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "night_light".to_string(),
+                name: "Nachtlicht".to_string(),
+                icon: "\u{f0594}".to_string(),
+                description: "Blauwlichtfilter aan/uit (hyprshade of hyprsunset)".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "power_profile".to_string(),
+                name: "Energieprofiel".to_string(),
+                icon: "\u{f05d1}".to_string(),
+                description: "Wissel tussen besparen, gebalanceerd en prestaties".to_string(),
+                is_custom: false,
+            },
+            ModuleInfo {
+                id: "notifications".to_string(),
+                name: "Meldingen".to_string(),
+                icon: "\u{f009c}".to_string(),
+                description: "Opent het meldingenpaneel".to_string(),
+                is_custom: false,
+            },
         ];
 
         // Ontdek custom modules in ~/.config/quickshell/modules/*.qml
@@ -790,8 +857,8 @@ impl ZenithShellConfig {
             if !list.iter().any(|m| m.id == script_id) {
                 list.push(ModuleInfo {
                     id: script_id,
-                    name: format!("💻 Script: {}", script.name),
-                    icon: script.icon.clone(),
+                    name: format!("Script: {}", script.name),
+                    icon: if script.icon.is_empty() { cfg.custom_icons.script.clone() } else { script.icon.clone() },
                     description: format!("`{}` (elke {}s)", script.command, script.interval_seconds),
                     is_custom: true,
                 });
@@ -809,8 +876,8 @@ impl ZenithShellConfig {
             if !list.iter().any(|m| m.id == script_id) {
                 list.push(ModuleInfo {
                     id: script_id,
-                    name: format!("💻 Script: {}", script.name),
-                    icon: script.icon.clone(),
+                    name: format!("Script: {}", script.name),
+                    icon: if script.icon.is_empty() { self.custom_icons.script.clone() } else { script.icon.clone() },
                     description: format!("`{}` (elke {}s)", script.command, script.interval_seconds),
                     is_custom: true,
                 });
@@ -889,7 +956,7 @@ impl ZenithShellConfig {
             ModuleInfo {
                 id: "power_strip".to_string(),
                 name: "Systeem Powerstrip".to_string(),
-                icon: cfg.custom_icons.power.clone(), // using power, as power_strip had ⚡ originally, but user did not define "power_strip" in CustomIcons, they defined lock, sleep, logout, reboot, shutdown. The power strip icon in available cards used ⚡ so battery_charging is an option, or power. I'll use power. The prompt didn't specify exactly which to use for power_strip, but let's check: "⚡" was used. The only ⚡ is battery_charging. Or maybe I should just use `cfg.custom_icons.power` which defaults to ⏻. Let's see: user defined `pub power: String`. Let's use `power`.
+                icon: cfg.custom_icons.power.clone(),
                 description: "Snelknoppen voor vergrendelen, slaapstand, reboot en uitschakelen".to_string(),
                 is_custom: false,
             },
@@ -905,7 +972,7 @@ impl ZenithShellConfig {
                             if stem != "script_card" && !list.iter().any(|m| m.id == stem) {
                                 list.push(ModuleInfo {
                                     id: stem.to_string(),
-                                    name: format!("✨ Custom: {}", stem),
+                                    name: format!("Custom: {}", stem),
                                     icon: cfg.custom_icons.custom.clone(),
                                     description: format!("Aangepaste QML kaart: {}.qml", stem),
                                     is_custom: true,
@@ -928,8 +995,8 @@ impl ZenithShellConfig {
             if !list.iter().any(|m| m.id == script_id) {
                 list.push(ModuleInfo {
                     id: script_id,
-                    name: format!("💻 Script: {}", script.name),
-                    icon: script.icon.clone(),
+                    name: format!("Script: {}", script.name),
+                    icon: if script.icon.is_empty() { self.custom_icons.script.clone() } else { script.icon.clone() },
                     description: format!("`{}` (elke {}s)", script.command, script.interval_seconds),
                     is_custom: true,
                 });
@@ -964,7 +1031,7 @@ impl ZenithShellConfig {
             ModuleInfo {
                 id: "avatar".to_string(),
                 name: "Profielfoto & Welkom".to_string(),
-                icon: "👤".to_string(),
+                icon: "\u{f0004}".to_string(),
                 description: "Gebruikersavatar met begroeting".to_string(),
                 is_custom: false,
             },
@@ -995,7 +1062,7 @@ impl ZenithShellConfig {
                             if !list.iter().any(|m| m.id == card_stem || m.id == stem) {
                                 list.push(ModuleInfo {
                                     id: stem.to_string(),
-                                    name: format!("✨ Custom: {}", stem),
+                                    name: format!("Custom: {}", stem),
                                     icon: cfg.custom_icons.custom.clone(),
                                     description: format!("Aangepaste Lockscreen kaart: {}.qml", stem),
                                     is_custom: true,
@@ -1013,8 +1080,8 @@ impl ZenithShellConfig {
             if !list.iter().any(|m| m.id == script_id) {
                 list.push(ModuleInfo {
                     id: script_id,
-                    name: format!("💻 Script: {}", script.name),
-                    icon: script.icon.clone(),
+                    name: format!("Script: {}", script.name),
+                    icon: if script.icon.is_empty() { cfg.custom_icons.script.clone() } else { script.icon.clone() },
                     description: format!("`{}` (elke {}s)", script.command, script.interval_seconds),
                     is_custom: true,
                 });
@@ -1032,8 +1099,8 @@ impl ZenithShellConfig {
             if !list.iter().any(|m| m.id == script_id) {
                 list.push(ModuleInfo {
                     id: script_id,
-                    name: format!("💻 Script: {}", script.name),
-                    icon: script.icon.clone(),
+                    name: format!("Script: {}", script.name),
+                    icon: if script.icon.is_empty() { self.custom_icons.script.clone() } else { script.icon.clone() },
                     description: format!("`{}` (elke {}s)", script.command, script.interval_seconds),
                     is_custom: true,
                 });
@@ -1046,6 +1113,28 @@ impl ZenithShellConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_emoji_icons_are_migrated_once() {
+        let _guard = crate::backend::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let home = std::path::PathBuf::from("/tmp/zenith-icon-migration-home");
+        let _ = std::fs::remove_dir_all(&home);
+        std::env::set_var("HOME", &home);
+        let path = ZenithShellConfig::config_path().unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, r#"{"custom_icons": {"volume_high": "🔊"}, "language": "en"}"#).unwrap();
+
+        let cfg = ZenithShellConfig::load_or_default();
+        assert_eq!(cfg.custom_icons.volume_high, "\u{f057e}");
+        assert_eq!(cfg.language, "en");
+        // Weggeschreven, en een eigen icoon daarna blijft staan.
+        let mut cfg = ZenithShellConfig::load_or_default();
+        assert_eq!(cfg.icons_version, 1);
+        cfg.custom_icons.volume_high = "X".into();
+        cfg.save().unwrap();
+        assert_eq!(ZenithShellConfig::load_or_default().custom_icons.volume_high, "X");
+        let _ = std::fs::remove_dir_all(&home);
+    }
 
     #[test]
     fn partial_config_keeps_user_values_instead_of_resetting() {
@@ -1063,7 +1152,7 @@ mod tests {
         cfg.custom_scripts.push(CustomScriptModule {
             id: "weather".to_string(),
             name: "Weerbericht".to_string(),
-            icon: "🌤️".to_string(),
+            icon: "\u{f0595}".to_string(),
             command: "curl -s 'wttr.in?format=1'".to_string(),
             interval_seconds: 300,
             on_click: Some("kitty -e curl wttr.in".to_string()),
@@ -1175,7 +1264,7 @@ mod tests {
             .expect("moet een testbestand kunnen schrijven in de temp map");
 
         let existing: Vec<ModuleInfo> = Vec::new();
-        let modules = ZenithShellConfig::discover_custom_modules_in_dir(&tmp, "✨", &existing);
+        let modules = ZenithShellConfig::discover_custom_modules_in_dir(&tmp, "\u{f0674}", &existing);
         let found = modules.iter().find(|m| m.id == "TestCustomProbe");
         assert!(found.is_some(), "Custom module TestCustomProbe should be discovered");
         let m = found.unwrap();
@@ -1192,7 +1281,7 @@ mod tests {
         cfg.custom_scripts.push(CustomScriptModule {
             id: "my_ip".to_string(),
             name: "Mijn IP".to_string(),
-            icon: "🌐".to_string(),
+            icon: "\u{f059f}".to_string(),
             command: "curl -s ifconfig.me".to_string(),
             interval_seconds: 60,
             on_click: None,
@@ -1239,9 +1328,9 @@ mod tests {
         let mut cfg = ZenithShellConfig::default();
         assert_eq!(cfg.language, "nl");
         assert!(!cfg.auto_palette);
-        assert_eq!(cfg.custom_icons.volume_high, "🔊");
-        assert_eq!(cfg.custom_icons.battery_full, "🔋");
-        assert_eq!(cfg.custom_icons.wifi, "📶");
+        assert_eq!(cfg.custom_icons.volume_high, "\u{f057e}");
+        assert_eq!(cfg.custom_icons.battery_full, "\u{f0079}");
+        assert_eq!(cfg.custom_icons.wifi, "\u{f05a9}");
 
         cfg.custom_icons.volume_high = "󰕾".to_string();
         cfg.language = "en".to_string();
@@ -1285,18 +1374,18 @@ mod tests {
         assert_eq!(cfg.lockscreen.layout_preset, "centered");
         assert_eq!(cfg.lockscreen.blur_radius, 32);
         assert_eq!(cfg.lockscreen.clock_font_size, 72);
-        assert_eq!(cfg.lockscreen.auth_indicator_icon, "🔒");
+        assert_eq!(cfg.lockscreen.auth_indicator_icon, "\u{f0341}");
 
         cfg.lockscreen.layout_preset = "split".to_string();
         cfg.lockscreen.blur_radius = 48;
         cfg.lockscreen.dim_opacity = 0.60;
         cfg.lockscreen.clock_format = "hh:mm:ss".to_string();
         cfg.lockscreen.clock_font_size = 96;
-        cfg.lockscreen.auth_indicator_icon = "🔑".to_string();
+        cfg.lockscreen.auth_indicator_icon = "\u{f0306}".to_string();
         cfg.lockscreen.custom_scripts.push(CustomScriptModule {
             id: "ls_script".to_string(),
             name: "Lock Notice".to_string(),
-            icon: "ℹ️".to_string(),
+            icon: "\u{f02fc}".to_string(),
             command: "echo 'Security Notice'".to_string(),
             interval_seconds: 60,
             on_click: None,
@@ -1309,7 +1398,7 @@ mod tests {
         assert_eq!(parsed.lockscreen.dim_opacity, 0.60);
         assert_eq!(parsed.lockscreen.clock_format, "hh:mm:ss");
         assert_eq!(parsed.lockscreen.clock_font_size, 96);
-        assert_eq!(parsed.lockscreen.auth_indicator_icon, "🔑");
+        assert_eq!(parsed.lockscreen.auth_indicator_icon, "\u{f0306}");
         assert_eq!(parsed.lockscreen.custom_scripts.len(), 1);
         assert_eq!(parsed.lockscreen.custom_scripts[0].name, "Lock Notice");
     }

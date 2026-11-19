@@ -103,6 +103,24 @@ fn ensure_zenith_panel(path: &Path, content: &str) {
     }
 }
 
+const MODULE_MARKER: &str = "// zenith-module: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .qml.bak)\n";
+
+/// Schrijft een standaardmodule of -kaart. Bestaat het bestand al, dan wordt het alleen bijgewerkt
+/// als het van Zenith is (markering, of `migrate` bij de eenmalige overstap van oudere versies);
+/// de vorige versie blijft bewaard als `.qml.bak`.
+fn ensure_zenith_file(migrate: bool, path: &Path, content: &str) {
+    let content = format!("{MODULE_MARKER}{content}");
+    let Ok(current) = read_to_string(path) else {
+        return ensure_file_exists(path, &content);
+    };
+    if current == content || !(migrate || current.starts_with(MODULE_MARKER)) {
+        return;
+    }
+    if std::fs::copy(path, path.with_extension("qml.bak")).is_ok() {
+        let _ = std::fs::write(path, content);
+    }
+}
+
 fn ensure_quickshell_config(home: &Path) {
     let qs_dir = home.join(".config/quickshell");
     let modules_dir = qs_dir.join("modules");
@@ -111,6 +129,23 @@ fn ensure_quickshell_config(home: &Path) {
     let _ = create_dir_all(&modules_dir);
     let _ = create_dir_all(&cards_dir);
     let _ = create_dir_all(&panels_dir);
+
+    // Gedeelde iconen (ZIcon/ZLabel/ZSettings) voor modules, kaarten en panelen.
+    let components_dir = qs_dir.join("components");
+    let _ = create_dir_all(&components_dir);
+    for (name, qml) in [
+        ("ZIcon.qml", include_str!("qml/components/ZIcon.qml")),
+        ("ZLabel.qml", include_str!("qml/components/ZLabel.qml")),
+        ("ZSettings.qml", include_str!("qml/components/ZSettings.qml")),
+    ] {
+        ensure_zenith_panel(&components_dir.join(name), qml);
+    }
+    let _ = std::fs::write(components_dir.join("qmldir"), include_str!("qml/components/qmldir"));
+
+    // Eenmalig (emoji → Nerd Font-iconen): ook modules en kaarten van oudere Zenith-versies
+    // vervangen; daarna alleen nog bestanden met de zenith-module-markering.
+    let stamp = qs_dir.join(".zenith-icons-v1");
+    let migrate = !stamp.exists();
 
     // 1. Garandeer zenith-shell.json
     let shell_json_path = qs_dir.join("zenith-shell.json");
@@ -369,7 +404,7 @@ Scope {
                     if (s.id === sId) {
                         item.scriptCommand = s.command || "";
                         item.intervalSec = s.interval_seconds || 10;
-                        item.scriptIcon = s.icon || "💻";
+                        item.scriptIcon = s.icon || "";
                         item.onClickCmd = s.on_click || "";
                         break;
                     }
@@ -570,12 +605,13 @@ Scope {
     Panels.Launcher {}
     Panels.Notifications {}
     Panels.Lockscreen {}
+    Panels.DesktopWidgets {}
 }
 "###;
     if shell_qml.exists() {
         if let Ok(content) = read_to_string(&shell_qml) {
             // Als het bestaande bestand verouderd is (mist ModuleLoader, FileView, Scope of Panels)
-            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") || !content.contains("Panels.Lockscreen") {
+            if !content.contains("ModuleLoader") || !content.contains("FileView") || !content.contains("Panels.ControlCenter") || !content.contains("Scope") || !content.contains("animEasing") || !content.contains("Panels.Lockscreen") || !content.contains("Panels.DesktopWidgets") {
                 // Eigen aanpassingen nooit kwijtraken: unieke back-up, en alleen overschrijven als die gelukt is.
                 let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
                 let backup = qs_dir.join(format!("shell.qml.bak-{}", stamp));
@@ -589,17 +625,32 @@ Scope {
     }
 
     // 3. Garandeer standaard modules in ~/.config/quickshell/modules/
-    ensure_default_modules(&modules_dir);
+    ensure_default_modules(&modules_dir, migrate);
 
     // 4. Garandeer Control Center & OSD panels in ~/.config/quickshell/panels/
-    ensure_panels(&panels_dir);
+    ensure_panels(&panels_dir, migrate);
 
     // 5. Garandeer dynamische kaarten in ~/.config/quickshell/cards/
-    ensure_default_cards(&cards_dir);
+    ensure_default_cards(&cards_dir, migrate);
+    if migrate {
+        let _ = std::fs::write(&stamp, "");
+    }
 }
 
-fn ensure_default_modules(dir: &Path) {
-    ensure_file_exists(
+fn ensure_default_modules(dir: &Path, migrate: bool) {
+    // Balkwidgets naar het voorbeeld van Noctalia; de QML staat in src/backend/qml/modules/.
+    for (name, qml) in [
+        ("taskbar.qml", include_str!("qml/modules/taskbar.qml")),
+        ("microphone.qml", include_str!("qml/modules/microphone.qml")),
+        ("keyboard_layout.qml", include_str!("qml/modules/keyboard_layout.qml")),
+        ("keep_awake.qml", include_str!("qml/modules/keep_awake.qml")),
+        ("night_light.qml", include_str!("qml/modules/night_light.qml")),
+        ("power_profile.qml", include_str!("qml/modules/power_profile.qml")),
+        ("notifications.qml", include_str!("qml/modules/notifications.qml")),
+    ] {
+        ensure_zenith_file(migrate, &dir.join(name), qml);
+    }
+    ensure_zenith_file(migrate, 
         &dir.join("workspaces.qml"),
         r###"import QtQuick
 import QtQuick.Layouts
@@ -669,9 +720,10 @@ RowLayout {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("active_window.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -697,20 +749,21 @@ Item {
     }
     Timer { id: winTimer; interval: 1000; onTriggered: winProc.running = true }
 
-    Text {
+    ZLabel {
         id: activeWinText
         anchors.centerIn: parent
         visible: activeWinMod.winTitle.length > 0
-        text: "🪟 " + activeWinMod.winTitle
+        name: "active_window"
+        text: activeWinMod.winTitle
         color: root.fgColor || "#cdd6f4"
-        font.pixelSize: root.userFontSize || 11
-        font.bold: true
+        pixelSize: root.userFontSize || 11
+        bold: true
     }
 }
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("clock.qml"),
         r###"import QtQuick
 import QtQuick.Layouts
@@ -741,7 +794,7 @@ Item {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("systray.qml"),
         r###"import QtQuick
 import QtQuick.Layouts
@@ -788,9 +841,10 @@ RowLayout {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("volume.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -824,12 +878,13 @@ Item {
     Process { id: upProc; command: ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%+"] }
     Process { id: downProc; command: ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%-"] }
 
-    Text {
+    ZLabel {
         id: volText
         anchors.centerIn: parent
-        text: (volMod.volumeMuted ? "🔇 " : "🔊 ") + volMod.volumeLevel
+        name: volMod.volumeMuted ? "volume_muted" : "volume_high"
+        text: volMod.volumeLevel
         color: volMod.volumeMuted ? "#6c7086" : (root.fgColor || "#cdd6f4")
-        font.pixelSize: root.userFontSize || 11
+        pixelSize: root.userFontSize || 11
     }
 
     MouseArea {
@@ -846,9 +901,10 @@ Item {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("brightness.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -877,12 +933,13 @@ Item {
     Process { id: upProc; command: ["brightnessctl", "set", "+5%"] }
     Process { id: downProc; command: ["brightnessctl", "set", "5%-"] }
 
-    Text {
+    ZLabel {
         id: brightText
         anchors.centerIn: parent
-        text: "☀️ " + brightMod.brightLevel
+        name: "brightness"
+        text: brightMod.brightLevel
         color: root.fgColor || "#cdd6f4"
-        font.pixelSize: root.userFontSize || 11
+        pixelSize: root.userFontSize || 11
     }
 
     MouseArea {
@@ -898,9 +955,10 @@ Item {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("power.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -914,12 +972,11 @@ Rectangle {
 
     Process { id: powerProc; command: ["bash", "-c", "wlogout || rofi -show power-menu || hyprctl dispatch exit"] }
 
-    Text {
+    ZIcon {
         anchors.centerIn: parent
-        text: "⏻"
+        name: "power"
         color: "#f38ba8"
-        font.pixelSize: 11
-        font.bold: true
+        size: 14
     }
     MouseArea {
         anchors.fill: parent
@@ -930,9 +987,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("launcher.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -946,10 +1004,11 @@ Rectangle {
 
     Process { id: launcherProc; command: ["bash", "-c", "rofi -show drun || wofi --show drun"] }
 
-    Text {
+    ZIcon {
         anchors.centerIn: parent
-        text: "🚀"
-        font.pixelSize: 11
+        name: "launcher"
+        color: root.themeAccent || "#89b4fa"
+        size: 14
     }
     MouseArea {
         anchors.fill: parent
@@ -960,7 +1019,7 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("brand.qml"),
         r###"import QtQuick
 import QtQuick.Layouts
@@ -983,9 +1042,10 @@ RowLayout {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("media.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1021,10 +1081,11 @@ Item {
         anchors.centerIn: parent
         spacing: 4
 
-        Text {
-            text: "🎵 " + mediaMod.mediaTitle
+        ZLabel {
+            name: "media"
+            text: mediaMod.mediaTitle
             color: root.themeAccent || "#89b4fa"
-            font.pixelSize: root.userFontSize || 11
+            pixelSize: root.userFontSize || 11
         }
     }
 
@@ -1040,9 +1101,10 @@ Item {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("cpu.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1065,20 +1127,22 @@ Item {
     }
     Timer { id: cpuTimer; interval: 3000; onTriggered: cpuProc.running = true }
 
-    Text {
+    ZLabel {
         id: cpuText
         anchors.centerIn: parent
-        text: "🖥 " + cpuMod.cpuLoad
+        name: "cpu"
+        text: cpuMod.cpuLoad
         color: root.fgColor || "#cdd6f4"
-        font.pixelSize: root.userFontSize || 11
+        pixelSize: root.userFontSize || 11
     }
 }
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("ram.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1101,20 +1165,22 @@ Item {
     }
     Timer { id: ramTimer; interval: 3000; onTriggered: ramProc.running = true }
 
-    Text {
+    ZLabel {
         id: ramText
         anchors.centerIn: parent
-        text: "💾 " + ramMod.ramUsage
+        name: "ram"
+        text: ramMod.ramUsage
         color: root.fgColor || "#cdd6f4"
-        font.pixelSize: root.userFontSize || 11
+        pixelSize: root.userFontSize || 11
     }
 }
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("battery.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1145,16 +1211,16 @@ Item {
     }
     readonly property string batteryIcon: {
         var level = parseInt(batteryLevel);
-        if (batteryStatus === "Charging") return "⚡";
-        if (isNaN(level)) return "🔋";
-        if (level > 40) return "🔋";
-        return "🪫";
+        if (batteryStatus === "Charging") return "battery_charging";
+        if (isNaN(level) || level > 40) return "battery_full";
+        return "battery_low";
     }
 
-    Text {
+    ZLabel {
         id: batText
         anchors.centerIn: parent
-        text: batMod.batteryIcon + " " + batMod.batteryLevel + "%"
+        name: batMod.batteryIcon
+        text: batMod.batteryLevel + "%"
         color: {
             var lvl = parseInt(batMod.batteryLevel);
             if (isNaN(lvl)) return root.fgColor || "#cdd6f4";
@@ -1162,15 +1228,16 @@ Item {
             if (lvl <= 40) return "#fab387";
             return root.fgColor || "#cdd6f4";
         }
-        font.pixelSize: root.userFontSize || 11
+        pixelSize: root.userFontSize || 11
     }
 }
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("network.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1206,20 +1273,22 @@ Item {
     }
     Timer { id: netTimer; interval: 5000; onTriggered: { netMod.netStatus = "unknown"; netProc.running = true; } }
 
-    Text {
+    ZLabel {
         id: netText
         anchors.centerIn: parent
-        text: netMod.netStatus === "connected" ? ("🌐 " + netMod.netName) : "🌐 –"
+        name: netMod.netStatus === "connected" ? "network" : "network_off"
+        text: netMod.netStatus === "connected" ? netMod.netName : ""
         color: netMod.netStatus === "connected" ? (root.fgColor || "#cdd6f4") : "#6c7086"
-        font.pixelSize: root.userFontSize || 11
+        pixelSize: root.userFontSize || 11
     }
 }
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("bluetooth.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1247,12 +1316,13 @@ Item {
 
     Process { id: btToggleProc; command: ["bluetoothctl", "power", "toggle"] }
 
-    Text {
+    ZLabel {
         id: btText
         anchors.centerIn: parent
-        text: "ᛒ " + (btMod.btPowered ? "aan" : "uit")
+        name: "bluetooth"
+        text: btMod.btPowered ? "aan" : "uit"
         color: btMod.btPowered ? (root.themeAccent || "#89b4fa") : "#6c7086"
-        font.pixelSize: root.userFontSize || 11
+        pixelSize: root.userFontSize || 11
     }
 
     MouseArea {
@@ -1264,7 +1334,7 @@ Item {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("CustomWidget.qml.example"),
         r###"import QtQuick
 import QtQuick.Layouts
@@ -1281,7 +1351,7 @@ Rectangle {
     Text {
         id: customText
         anchors.centerIn: parent
-        text: "✨ Hello from Custom QML!"
+        text: "Hello from Custom QML!"
         color: root.fgColor || "#cdd6f4"
         font.pixelSize: root.userFontSize || 11
     }
@@ -1296,9 +1366,10 @@ Rectangle {
 }
 "###,
     );
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("script_runner.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1310,7 +1381,7 @@ Item {
 
     property string scriptCommand: ""
     property int intervalSec: 10
-    property string scriptIcon: "💻"
+    property string scriptIcon: ""
     property string onClickCmd: ""
     property string outputText: ""
 
@@ -1346,10 +1417,11 @@ Item {
         anchors.centerIn: parent
         spacing: 4
 
-        Text {
-            visible: scriptMod.scriptIcon.length > 0
-            text: scriptMod.scriptIcon
-            font.pixelSize: root.userFontSize || 11
+        ZIcon {
+            name: "script"
+            icon: scriptMod.scriptIcon
+            color: root.themeAccent || "#89b4fa"
+            size: (root.userFontSize || 11) + 4
         }
 
         Text {
@@ -1377,9 +1449,10 @@ Item {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("quick_settings.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1398,9 +1471,10 @@ Rectangle {
         anchors.centerIn: parent
         spacing: 6
 
-        Text {
-            text: "⚙️"
-            font.pixelSize: 11
+        ZIcon {
+            name: "settings"
+            color: root.themeAccent || "#89b4fa"
+            size: 14
         }
         Text {
             text: "Quick Settings"
@@ -1425,12 +1499,14 @@ Rectangle {
 }
 
 
-fn ensure_panels(dir: &Path) {
+fn ensure_panels(dir: &Path, migrate: bool) {
+    ensure_zenith_panel(&dir.join("DesktopWidgets.qml"), include_str!("qml/panels/DesktopWidgets.qml"));
     // Pop-uppanelen delen ZenithPopup.qml; ze worden bijgewerkt als Zenith een nieuwere versie heeft.
     ensure_zenith_panel(
         &dir.join("ZenithPopup.qml"),
         r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
 import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -1627,10 +1703,11 @@ Scope {
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
-                    Text {
+                    ZIcon {
                         visible: pop.icon.length > 0
-                        text: pop.icon
-                        font.pixelSize: pop.fontSize + 5
+                        name: pop.icon
+                        color: pop.accent
+                        size: pop.fontSize + 7
                     }
                     Text {
                         text: pop.title
@@ -1645,11 +1722,11 @@ Scope {
                         radius: 13
                         color: closeArea.containsMouse ? Qt.alpha(pop.fg, 0.18) : Qt.alpha(pop.fg, 0.08)
                         Behavior on color { ColorAnimation { duration: 120 } }
-                        Text {
+                        ZIcon {
                             anchors.centerIn: parent
-                            text: "✕"
+                            name: "close"
                             color: pop.fg
-                            font.pixelSize: pop.fontSize
+                            size: pop.fontSize + 2
                         }
                         MouseArea {
                             id: closeArea
@@ -1676,6 +1753,7 @@ Scope {
         &dir.join("Clipboard.qml"),
         r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
 import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -1762,7 +1840,7 @@ Scope {
     ZenithPopup {
         id: popup
         title: popup.tr("clipboard")
-        icon: "📋"
+        icon: "clipboard"
         position: "top"
         panelWidth: 460
         panelHeight: 520
@@ -1786,7 +1864,7 @@ Scope {
                     anchors.leftMargin: 12
                     anchors.rightMargin: 12
                     spacing: 8
-                    Text { text: "🔍"; font.pixelSize: popup.fontSize + 1 }
+                    ZIcon { name: "search"; color: popup.fg; opacity: 0.6; size: popup.fontSize + 3 }
                     TextInput {
                         id: search
                         Layout.fillWidth: true
@@ -1844,9 +1922,10 @@ Scope {
                         anchors.leftMargin: 12
                         anchors.rightMargin: 8
                         spacing: 10
-                        Text {
-                            text: row.modelData.image ? "🖼️" : "📝"
-                            font.pixelSize: popup.fontSize + 2
+                        ZIcon {
+                            name: row.modelData.image ? "image" : "text"
+                            color: popup.accent
+                            size: popup.fontSize + 5
                         }
                         Text {
                             Layout.fillWidth: true
@@ -1862,7 +1941,7 @@ Scope {
                             implicitHeight: 26
                             radius: 8
                             color: delArea.containsMouse ? Qt.alpha("#f38ba8", 0.25) : "transparent"
-                            Text { anchors.centerIn: parent; text: "🗑"; font.pixelSize: popup.fontSize }
+                            ZIcon { anchors.centerIn: parent; name: "trash"; color: delArea.containsMouse ? "#f38ba8" : popup.fg; size: popup.fontSize + 3; hovered: delArea.containsMouse }
                             MouseArea {
                                 id: delArea
                                 anchors.fill: parent
@@ -1997,7 +2076,7 @@ Scope {
     ZenithPopup {
         id: popup
         title: popup.tr("calendar")
-        icon: "📅"
+        icon: "calendar"
         position: "top-right"
         panelWidth: 360
         panelHeight: 470
@@ -2129,6 +2208,7 @@ Scope {
         &dir.join("Media.qml"),
         r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
 import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -2173,7 +2253,7 @@ Scope {
     ZenithPopup {
         id: popup
         title: popup.tr("media")
-        icon: "🎵"
+        icon: "media"
         position: "top"
         panelWidth: 420
         panelHeight: 300
@@ -2220,8 +2300,10 @@ Scope {
                     Text {
                         anchors.centerIn: parent
                         visible: art.status !== Image.Ready
-                        text: "🎵"
-                        font.pixelSize: 40
+                        font.family: "JetBrainsMono Nerd Font Propo"
+                        text: ZSettings.glyph("media")
+                        color: popup.accent
+                        font.pixelSize: 44
                     }
                 }
 
@@ -2313,9 +2395,9 @@ Scope {
                 spacing: 18
                 Repeater {
                     model: [
-                        { icon: "⏮", act: "prev", big: false },
-                        { icon: media.player && media.player.isPlaying ? "⏸" : "▶", act: "toggle", big: true },
-                        { icon: "⏭", act: "next", big: false }
+                        { icon: "media_prev", act: "prev", big: false },
+                        { icon: media.player && media.player.isPlaying ? "media_pause" : "media_play", act: "toggle", big: true },
+                        { icon: "media_next", act: "next", big: false }
                     ]
                     Rectangle {
                         required property var modelData
@@ -2326,11 +2408,11 @@ Scope {
                         scale: btnArea.pressed ? 0.9 : (btnArea.containsMouse ? 1.06 : 1.0)
                         Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
                         Behavior on color { ColorAnimation { duration: 120 } }
-                        Text {
+                        ZIcon {
                             anchors.centerIn: parent
-                            text: parent.modelData.icon
+                            name: parent.modelData.icon
                             color: parent.modelData.big ? popup.bg : popup.fg
-                            font.pixelSize: parent.modelData.big ? 22 : 16
+                            size: parent.modelData.big ? 26 : 20
                         }
                         MouseArea {
                             id: btnArea
@@ -2355,7 +2437,7 @@ Scope {
             anchors.centerIn: parent
             visible: media.player === null
             spacing: 6
-            Text { Layout.alignment: Qt.AlignHCenter; text: "🎧"; font.pixelSize: 44 }
+            ZIcon { Layout.alignment: Qt.AlignHCenter; name: "headphones"; color: popup.accent; opacity: 0.7; size: 48 }
             Text {
                 Layout.alignment: Qt.AlignHCenter
                 text: popup.tr("nothing")
@@ -2371,6 +2453,7 @@ Scope {
         &dir.join("Launcher.qml"),
         r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
 import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -2424,7 +2507,7 @@ Scope {
     ZenithPopup {
         id: popup
         title: popup.tr("apps")
-        icon: "🚀"
+        icon: "launcher"
         position: "top"
         panelWidth: 540
         panelHeight: 540
@@ -2447,7 +2530,7 @@ Scope {
                     anchors.leftMargin: 14
                     anchors.rightMargin: 14
                     spacing: 10
-                    Text { text: "🔍"; font.pixelSize: popup.fontSize + 3 }
+                    ZIcon { name: "search"; color: popup.accent; size: popup.fontSize + 6 }
                     TextInput {
                         id: search
                         Layout.fillWidth: true
@@ -2572,6 +2655,7 @@ Scope {
         &dir.join("Notifications.qml"),
         r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
 import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -2655,8 +2739,10 @@ Scope {
                 Text {
                     anchors.centerIn: parent
                     visible: nIcon.status !== Image.Ready
-                    text: "🔔"
-                    font.pixelSize: 20
+                    font.family: "JetBrainsMono Nerd Font Propo"
+                    text: ZSettings.glyph("dnd_off")
+                    color: cardRoot.theme.fg
+                    font.pixelSize: 22
                 }
             }
 
@@ -2672,10 +2758,11 @@ Scope {
                         font.pixelSize: cardRoot.theme.fontSize - 1
                         elide: Text.ElideRight
                     }
-                    Text {
-                        text: "✕"
+                    ZIcon {
+                        name: "close"
+                        hovered: xArea.containsMouse
                         color: Qt.alpha(cardRoot.theme.fg, xArea.containsMouse ? 0.9 : 0.45)
-                        font.pixelSize: cardRoot.theme.fontSize
+                        size: cardRoot.theme.fontSize + 2
                         MouseArea {
                             id: xArea
                             anchors.fill: parent
@@ -2796,7 +2883,7 @@ Scope {
     ZenithPopup {
         id: popup
         title: popup.tr("notifications")
-        icon: "🔔"
+        icon: "dnd_off"
         position: "top-right"
         panelWidth: 400
         panelHeight: 560
@@ -2821,7 +2908,7 @@ Scope {
                         id: dndRow
                         anchors.centerIn: parent
                         spacing: 6
-                        Text { text: nc.dnd ? "🔕" : "🔔"; font.pixelSize: popup.fontSize + 1 }
+                        ZIcon { name: nc.dnd ? "dnd_on" : "dnd_off"; color: popup.fg; size: popup.fontSize + 4 }
                         Text { text: popup.tr("dnd"); color: popup.fg; font.pixelSize: popup.fontSize }
                     }
                     MouseArea {
@@ -2871,7 +2958,7 @@ Scope {
                     anchors.centerIn: parent
                     visible: nc.history.length === 0
                     spacing: 6
-                    Text { Layout.alignment: Qt.AlignHCenter; text: "🔕"; font.pixelSize: 40; opacity: 0.6 }
+                    ZIcon { Layout.alignment: Qt.AlignHCenter; name: "dnd_on"; color: popup.fg; size: 44; opacity: 0.5 }
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: popup.tr("nonotif")
@@ -2889,6 +2976,7 @@ Scope {
         &dir.join("ControlCenter.qml"),
         r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
 import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -3069,10 +3157,10 @@ Scope {
                             height: 22
                             radius: 11
                             color: Qt.alpha(ccScope.textColor, 0.12)
-                            Text {
+                            ZIcon {
                                 anchors.centerIn: parent
-                                text: (ccScope.icons && ccScope.icons.close) || "✕"
-                                font.pixelSize: 10
+                                name: "close"
+                                size: 13
                                 color: ccScope.textColor
                             }
                             MouseArea {
@@ -3089,11 +3177,11 @@ Scope {
                         spacing: 6
                         Repeater {
                             model: [
-                                { id: "lock", icon: "🔒", confirm: false, cmd: "quickshell -p \"$HOME/.config/quickshell/shell.qml\" ipc call lockscreen lock" },
-                                { id: "settings", icon: "⚙️", confirm: false, cmd: "zenith" },
-                                { id: "logout", icon: "🚪", confirm: true, cmd: "hyprctl dispatch 'hl.dsp.exit()' 2>/dev/null | grep -q ok || hyprctl dispatch exit" },
-                                { id: "reboot", icon: "🔄", confirm: true, cmd: "systemctl reboot" },
-                                { id: "poweroff", icon: "⏻", confirm: true, cmd: "systemctl poweroff" }
+                                { id: "lock", icon: "lock", confirm: false, cmd: "quickshell -p \"$HOME/.config/quickshell/shell.qml\" ipc call lockscreen lock" },
+                                { id: "settings", icon: "settings", confirm: false, cmd: "zenith" },
+                                { id: "logout", icon: "logout", confirm: true, cmd: "hyprctl dispatch 'hl.dsp.exit()' 2>/dev/null | grep -q ok || hyprctl dispatch exit" },
+                                { id: "reboot", icon: "reboot", confirm: true, cmd: "systemctl reboot" },
+                                { id: "poweroff", icon: "shutdown", confirm: true, cmd: "systemctl poweroff" }
                             ]
                             Rectangle {
                                 id: actBtn
@@ -3111,7 +3199,7 @@ Scope {
                                 ColumnLayout {
                                     anchors.centerIn: parent
                                     spacing: 2
-                                    Text { Layout.alignment: Qt.AlignHCenter; text: actBtn.modelData.icon; font.pixelSize: 16 }
+                                    ZIcon { Layout.alignment: Qt.AlignHCenter; name: actBtn.modelData.icon; color: actBtn.confirming ? "#f38ba8" : ccScope.textColor; size: 20; hovered: actArea.containsMouse }
                                     Text {
                                         Layout.alignment: Qt.AlignHCenter
                                         text: actBtn.confirming ? ccScope.label("sure") : ccScope.label(actBtn.modelData.id)
@@ -3152,7 +3240,7 @@ Scope {
                                         if (s.id === sId) {
                                             item.scriptCommand = s.command || "";
                                             item.intervalSec = s.interval_seconds || 10;
-                                            item.scriptIcon = s.icon || ((ccScope.icons && ccScope.icons.script) || "💻");
+                                            item.scriptIcon = s.icon || "";
                                             item.onClickCmd = s.on_click || "";
                                             item.cardName = s.name || "Custom Script";
                                             break;
@@ -3173,6 +3261,7 @@ Scope {
         &dir.join("Lockscreen.qml"),
         r###"// zenith-panel: wordt door Zenith bijgewerkt (vorige versie blijft bewaard als .bak)
 import QtQuick
+import "../components"
 import QtQuick.Layouts
 import QtQuick.Effects
 import Quickshell
@@ -3444,9 +3533,10 @@ Scope {
                                 Text { Layout.fillWidth: true; text: mediaCard.player ? mediaCard.player.trackArtist : ""; color: Qt.alpha(ls.fg, 0.6); elide: Text.ElideRight }
                             }
                             Text {
-                                text: mediaCard.player && mediaCard.player.isPlaying ? "⏸" : "▶"
+                                font.family: "JetBrainsMono Nerd Font Propo"
+                                text: ZSettings.glyph(mediaCard.player && mediaCard.player.isPlaying ? "media_pause" : "media_play")
                                 color: ls.fg
-                                font.pixelSize: 20
+                                font.pixelSize: 24
                                 MouseArea {
                                     anchors.fill: parent
                                     anchors.margins: -8
@@ -3532,7 +3622,7 @@ Scope {
                             anchors.leftMargin: 20
                             anchors.rightMargin: 20
                             spacing: 10
-                            Text { text: ls.busy ? "⏳" : "🔒"; font.pixelSize: 16 }
+                            ZIcon { name: ls.busy ? "loading" : "lock"; spinning: ls.busy; color: ls.accent; size: 20 }
                             TextInput {
                                 id: input
                                 Layout.fillWidth: true
@@ -3574,6 +3664,7 @@ Scope {
                         visible: ls.shows("battery_network") && level.length > 0
                         text: level
                         color: Qt.alpha(ls.fg, 0.7)
+                        font.family: "JetBrainsMono Nerd Font Propo"
                         font.pixelSize: 13
                         Process {
                             id: batProc
@@ -3581,7 +3672,7 @@ Scope {
                             stdout: StdioCollector {
                                 onStreamFinished: {
                                     var p = this.text.trim().split(" ");
-                                    battery.level = p.length >= 2 ? (p[1] === "Charging" ? "⚡ " : "🔋 ") + p[0] + "%" : "";
+                                    battery.level = p.length >= 2 ? ZSettings.glyph(p[1] === "Charging" ? "battery_charging" : "battery_full") + " " + p[0] + "%" : "";
                                 }
                             }
                         }
@@ -3602,7 +3693,7 @@ Scope {
                 color: Qt.alpha(ls.surface, 0.9)
                 border.width: 1
                 border.color: ls.accent
-                Text { id: badge; anchors.centerIn: parent; text: "👁 " + ls.tr("preview"); color: ls.fg; font.pixelSize: 13; font.bold: true }
+                Text { id: badge; anchors.centerIn: parent; text: ls.tr("preview"); color: ls.fg; font.pixelSize: 13; font.bold: true }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: ls.isPreview = false }
             }
         }
@@ -3611,9 +3702,11 @@ Scope {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(
+        migrate,
         &dir.join("Osd.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -3649,7 +3742,7 @@ Scope {
     readonly property color accentColor: (osdScope.shellConfig.styling && osdScope.shellConfig.styling.accent) || "#89b4fa"
     readonly property color textColor: (osdScope.shellConfig.styling && osdScope.shellConfig.styling.text_color) || "#cdd6f4"
 
-    property string currentIcon: "🔊"
+    property string currentIcon: "volume_high"
     property string currentText: "50%"
     property real currentProgress: 0.5
     property real lastVol: -1.0
@@ -3661,7 +3754,7 @@ Scope {
         target: "osd"
         function popup(icon: string, text: string, val: real) {
             if (!osdScope.isOsdEnabled) return;
-            osdScope.currentIcon = icon || "🔊";
+            osdScope.currentIcon = icon || "volume_high";
             osdScope.currentText = text || "";
             osdScope.currentProgress = Math.max(0.0, Math.min(1.0, val || 0.0));
             osdScope.isOsdActive = true;
@@ -3690,7 +3783,7 @@ Scope {
                 if (match && match[1]) {
                     var v = parseFloat(match[1]);
                     if (osdScope.lastVol >= 0.0 && Math.abs(osdScope.lastVol - v) > 0.005) {
-                        osdScope.popup(isMuted ? "🔇" : (v > 0.5 ? "🔊" : "🔉"), isMuted ? "Gedempt" : Math.round(v * 100) + "%", v);
+                        osdScope.popup(isMuted ? "volume_muted" : (v > 0.5 ? "volume_high" : "volume_medium"), isMuted ? "Gedempt" : Math.round(v * 100) + "%", v);
                     }
                     osdScope.lastVol = v;
                 }
@@ -3710,7 +3803,7 @@ Scope {
                 if (!isNaN(val)) {
                     var b = val / 100.0;
                     if (osdScope.lastBright >= 0.0 && Math.abs(osdScope.lastBright - b) > 0.01) {
-                        osdScope.popup("☀️", val + "%", b);
+                        osdScope.popup("brightness", val + "%", b);
                     }
                     osdScope.lastBright = b;
                 }
@@ -3768,10 +3861,10 @@ Scope {
                 anchors.rightMargin: 16
                 spacing: 12
 
-                Text {
+                ZIcon {
                     visible: osdScope.showIcon
-                    text: osdScope.currentIcon
-                    font.pixelSize: 16
+                    name: osdScope.currentIcon
+                    size: 20
                     color: osdScope.accentColor
                 }
 
@@ -3808,10 +3901,10 @@ Scope {
                 anchors.bottomMargin: 14
                 spacing: 10
 
-                Text {
+                ZIcon {
                     visible: osdScope.showIcon
-                    text: osdScope.currentIcon
-                    font.pixelSize: 16
+                    name: osdScope.currentIcon
+                    size: 20
                     Layout.alignment: Qt.AlignHCenter
                     color: osdScope.accentColor
                 }
@@ -3850,10 +3943,11 @@ Scope {
     );
 }
 
-fn ensure_default_cards(dir: &Path) {
-    ensure_file_exists(
+fn ensure_default_cards(dir: &Path, migrate: bool) {
+    ensure_zenith_file(migrate, 
         &dir.join("wifi_toggle.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -3890,9 +3984,9 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        Text {
-            text: cardRoot.isEnabled ? "📶" : "󰤭"
-            font.pixelSize: 18
+        ZIcon {
+            name: cardRoot.isEnabled ? "wifi" : "wifi_off"
+            size: 22
             color: cardRoot.isEnabled ? "#89b4fa" : "#a6adc8"
         }
 
@@ -3947,9 +4041,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("bluetooth_toggle.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -3986,9 +4081,9 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        Text {
-            text: "ᛒ"
-            font.pixelSize: 18
+        ZIcon {
+            name: "bluetooth"
+            size: 22
             color: cardRoot.isEnabled ? "#89b4fa" : "#a6adc8"
         }
 
@@ -4043,9 +4138,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("dnd_toggle.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4076,9 +4172,9 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        Text {
-            text: cardRoot.isDnd ? "🔕" : "🔔"
-            font.pixelSize: 18
+        ZIcon {
+            name: cardRoot.isDnd ? "dnd_on" : "dnd_off"
+            size: 22
             color: cardRoot.isDnd ? "#f38ba8" : "#cdd6f4"
         }
 
@@ -4130,9 +4226,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("nightlight_toggle.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4162,9 +4259,9 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        Text {
-            text: "🌙"
-            font.pixelSize: 18
+        ZIcon {
+            name: "nightlight"
+            size: 22
             color: cardRoot.isNight ? "#fab387" : "#cdd6f4"
         }
 
@@ -4217,9 +4314,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("volume_slider.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4260,9 +4358,9 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
-            Text {
-                text: cardRoot.isMuted ? "🔇" : (cardRoot.volumeLevel > 0.5 ? "🔊" : "🔉")
-                font.pixelSize: 14
+            ZIcon {
+                name: cardRoot.isMuted ? "volume_muted" : (cardRoot.volumeLevel > 0.5 ? "volume_high" : "volume_medium")
+                size: 18
                 color: cardRoot.isMuted ? "#f38ba8" : "#89b4fa"
             }
             Text {
@@ -4315,9 +4413,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("mic_slider.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4358,9 +4457,9 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
-            Text {
-                text: cardRoot.isMuted ? "🎙️❌" : "🎙️"
-                font.pixelSize: 14
+            ZIcon {
+                name: cardRoot.isMuted ? "mic_muted" : "mic"
+                size: 18
                 color: cardRoot.isMuted ? "#f38ba8" : "#a6e3a1"
             }
             Text {
@@ -4413,9 +4512,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("brightness_slider.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4451,9 +4551,9 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
-            Text {
-                text: "☀️"
-                font.pixelSize: 14
+            ZIcon {
+                name: "brightness"
+                size: 18
                 color: "#f9e2af"
             }
             Text {
@@ -4506,9 +4606,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("mpris_card.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4553,10 +4654,11 @@ Rectangle {
             height: 48
             radius: 8
             color: Qt.alpha("#89b4fa", 0.2)
-            Text {
+            ZIcon {
                 anchors.centerIn: parent
-                text: "🎵"
-                font.pixelSize: 22
+                name: "media"
+                color: "#89b4fa"
+                size: 26
             }
         }
 
@@ -4578,9 +4680,9 @@ Rectangle {
             }
             RowLayout {
                 spacing: 14
-                Text {
-                    text: "⏮"
-                    font.pixelSize: 14
+                ZIcon {
+                    name: "media_prev"
+                    size: 18
                     color: "#cdd6f4"
                     MouseArea {
                         anchors.fill: parent
@@ -4588,9 +4690,9 @@ Rectangle {
                         onClicked: { cmdProc.command = ["playerctl", "previous"]; cmdProc.running = true; }
                     }
                 }
-                Text {
-                    text: cardRoot.status === "Playing" ? "⏸" : "▶"
-                    font.pixelSize: 16
+                ZIcon {
+                    name: cardRoot.status === "Playing" ? "media_pause" : "media_play"
+                    size: 20
                     color: "#89b4fa"
                     font.bold: true
                     MouseArea {
@@ -4599,9 +4701,9 @@ Rectangle {
                         onClicked: { cmdProc.command = ["playerctl", "play-pause"]; cmdProc.running = true; }
                     }
                 }
-                Text {
-                    text: "⏭"
-                    font.pixelSize: 14
+                ZIcon {
+                    name: "media_next"
+                    size: 18
                     color: "#cdd6f4"
                     MouseArea {
                         anchors.fill: parent
@@ -4617,9 +4719,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("battery_card.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4660,9 +4763,9 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        Text {
-            text: cardRoot.status === "Charging" ? "⚡" : (cardRoot.percent > 20 ? "🔋" : "🪫")
-            font.pixelSize: 18
+        ZIcon {
+            name: cardRoot.status === "Charging" ? "battery_charging" : (cardRoot.percent > 20 ? "battery_full" : "battery_low")
+            size: 22
             color: cardRoot.percent > 20 ? "#a6e3a1" : "#f38ba8"
         }
 
@@ -4705,9 +4808,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("power_strip.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4735,10 +4839,12 @@ Rectangle {
             property string tip: ""
             property var action: null
 
-            Text {
+            ZIcon {
                 anchors.centerIn: parent
-                text: parent.icon
-                font.pixelSize: 14
+                name: parent.icon
+                color: "#cdd6f4"
+                size: 18
+                hovered: btnArea.containsMouse
             }
             MouseArea {
                 id: btnArea
@@ -4750,27 +4856,27 @@ Rectangle {
         }
 
         PowerButton {
-            icon: "🔒"
+            icon: "lock"
             tip: "Vergrendel scherm"
             action: () => { pProc.command = ["bash", "-c", "hyprlock || swaylock || loginctl lock-session"]; pProc.running = true; }
         }
         PowerButton {
-            icon: "💤"
+            icon: "sleep"
             tip: "Slaapstand"
             action: () => { pProc.command = ["systemctl", "suspend"]; pProc.running = true; }
         }
         PowerButton {
-            icon: "🚪"
+            icon: "logout"
             tip: "Afmelden"
             action: () => { pProc.command = ["hyprctl", "dispatch", "exit"]; pProc.running = true; }
         }
         PowerButton {
-            icon: "🔄"
+            icon: "reboot"
             tip: "Herstarten"
             action: () => { pProc.command = ["systemctl", "reboot"]; pProc.running = true; }
         }
         PowerButton {
-            icon: "⏻"
+            icon: "shutdown"
             tip: "Afsluiten"
             action: () => { pProc.command = ["systemctl", "poweroff"]; pProc.running = true; }
         }
@@ -4780,9 +4886,10 @@ Rectangle {
 "###,
     );
 
-    ensure_file_exists(
+    ensure_zenith_file(migrate, 
         &dir.join("script_card.qml"),
         r###"import QtQuick
+import "../components"
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -4798,7 +4905,7 @@ Rectangle {
 
     property string scriptCommand: ""
     property int intervalSec: 10
-    property string scriptIcon: "💻"
+    property string scriptIcon: ""
     property string onClickCmd: ""
     property string cardName: "Custom Script"
     property string liveOutput: "Laden..."
@@ -4823,9 +4930,9 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        Text {
-            text: cardRoot.scriptIcon
-            font.pixelSize: 18
+        ZIcon {
+            name: "script"; icon: cardRoot.scriptIcon
+            size: 22
         }
 
         ColumnLayout {
@@ -4847,10 +4954,10 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        Text {
+        ZIcon {
             visible: cardRoot.onClickCmd.length > 0
-            text: "➔"
-            font.pixelSize: 12
+            name: "arrow"
+            size: 16
             color: "#6c7086"
         }
     }
@@ -4890,17 +4997,17 @@ fn ensure_waybar_config(home: &Path) {
     },
     "battery": {
         "format": "{icon}  {capacity}%",
-        "format-charging": "⚡ {capacity}%",
-        "format-icons": ["🪫", "🪫", "🔋", "🔋", "🔋"],
+        "format-charging": "󰂄 {capacity}%",
+        "format-icons": ["󱊡", "󱊡", "󰁹", "󰁹", "󰁹"],
         "interval": 30
     },
     "cpu": {
-        "format": "🖥 {usage}%",
+        "format": "󰻠 {usage}%",
         "interval": 3
     },
     "pulseaudio": {
-        "format": "🔊 {volume}%",
-        "format-muted": "🔇 muted",
+        "format": "󰕾 {volume}%",
+        "format-muted": "󰖁 muted",
         "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
     "bluetooth": {
@@ -4910,9 +5017,9 @@ fn ensure_waybar_config(home: &Path) {
         "on-click": "bluetoothctl power toggle"
     },
     "network": {
-        "format-wifi": "🌐 {essid}",
-        "format-ethernet": "🌐 Ethernet",
-        "format-disconnected": "🌐 –",
+        "format-wifi": "󰖩 {essid}",
+        "format-ethernet": "󰈀 Ethernet",
+        "format-disconnected": "󰖪 –",
         "tooltip-format": "{ifname}: {ipaddr}"
     },
     "tray": {

@@ -246,7 +246,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
                 cr.set_source_rgb(tr_r, tg, tb);
                 cr.set_font_size(9.0);
                 cr.move_to(w / 2.0 - 45.0, h * 0.84 + 13.0);
-                let _ = cr.show_text("📶 Wi-Fi   🔋 100%");
+                let _ = cr.show_text("Wi-Fi   100%");
             }
 
             // Monitor Buitenkant Border
@@ -271,7 +271,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
         .build();
 
     let btn_test_win = Button::builder()
-        .label(format!("👁️ {}", tr.ls_test_preview))
+        .label(tr.ls_test_preview.as_str())
         .valign(Align::Center)
         .build();
     btn_test_win.connect_clicked(|_| {
@@ -280,7 +280,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
     row_preview_actions.add_suffix(&btn_test_win);
 
     let btn_lock_now = Button::builder()
-        .label(format!("🔒 {}", tr.ls_lock_now))
+        .label(tr.ls_lock_now.as_str())
         .valign(Align::Center)
         .build();
     btn_lock_now.add_css_class("destructive-action");
@@ -540,7 +540,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
         .width_chars(24)
         .valign(Align::Center)
         .build();
-    let btn_avatar_browse = Button::builder().label("📁 Blader").valign(Align::Center).build();
+    let btn_avatar_browse = Button::builder().label("Blader").valign(Align::Center).build();
     let row_avatar = ActionRow::builder()
         .title("Avatar Afbeelding")
         .subtitle("Kies een profielfoto voor op het scherm")
@@ -590,7 +590,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
     let cur_icon = shell_state.borrow().lockscreen.auth_indicator_icon.clone();
     let entry_icon = Entry::builder()
         .text(&cur_icon)
-        .placeholder_text("bijv. 🔒 of 🔑 of ⚡")
+        .placeholder_text("Nerd Font-icoon (leeg = standaard)")
         .width_chars(6)
         .valign(Align::Center)
         .build();
@@ -606,7 +606,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
         entry_icon.connect_changed(move |e| {
             let txt = e.text().trim().to_string();
             let mut sh = sh_st.borrow_mut();
-            sh.lockscreen.auth_indicator_icon = if txt.is_empty() { "🔒".to_string() } else { txt };
+            sh.lockscreen.auth_indicator_icon = if txt.is_empty() { "\u{f0341}".to_string() } else { txt };
             themes::sync_shell_config(&sh);
             drop(sh);
             da.queue_draw();
@@ -684,7 +684,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
             let info = all.iter().find(|c| c.id == *card_id || card_id.starts_with(&format!("{}:", c.id)));
             let title = match info {
                 Some(i) => format!("{} {}", i.icon, i.name),
-                None => format!("🎴 {}", card_id),
+                None => card_id.to_string(),
             };
             let desc = match info {
                 Some(i) => i.description.clone(),
@@ -732,7 +732,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
                 row.add_suffix(&btn_down);
             }
 
-            let btn_del = Button::builder().label("✖").valign(Align::Center).tooltip_text("Verwijderen").build();
+            let btn_del = Button::builder().icon_name("user-trash-symbolic").valign(Align::Center).tooltip_text("Verwijderen").build();
             btn_del.add_css_class("destructive-action");
             {
                 let st = Rc::clone(sh_st);
@@ -802,7 +802,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
     row_sname.add_suffix(&entry_sname);
     group_custom_script.add(&row_sname);
 
-    let entry_sico = Entry::builder().placeholder_text("Emoji (bijv. 🛡️)").width_chars(6).build();
+    let entry_sico = Entry::builder().placeholder_text("Icoon (leeg = standaard)").width_chars(6).build();
     let row_sico = ActionRow::builder().title("Icoon").build();
     row_sico.add_suffix(&entry_sico);
     group_custom_script.add(&row_sico);
@@ -826,7 +826,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
             let cmd = e_c.text().trim().to_string();
             if name.is_empty() || cmd.is_empty() { return; }
 
-            let icon = if e_i.text().trim().is_empty() { "💻".to_string() } else { e_i.text().trim().to_string() };
+            let icon = e_i.text().trim().to_string();
             let safe_id: String = name.to_lowercase().chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
             let id = format!("{}_{}", safe_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
 
@@ -865,7 +865,7 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
         .description("Slaat direct op naar ~/.config/quickshell/zenith-shell.json")
         .build();
 
-    let btn_save = Button::builder().label(format!("💾 {}", tr.ls_save)).valign(Align::Center).build();
+    let btn_save = Button::builder().label(tr.ls_save.as_str()).valign(Align::Center).build();
     btn_save.add_css_class("suggested-action");
 
     let status_lbl = Label::builder().label("").halign(Align::Start).margin_start(12).build();
@@ -879,10 +879,10 @@ pub fn build_lockscreen_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translatio
             match sh.save() {
                 Ok(_) => {
                     themes::sync_shell_config(&sh);
-                    lbl.set_markup(&format!("<span foreground=\"#a6e3a1\">✔ {}</span>", toast));
+                    lbl.set_markup(&format!("<span foreground=\"#a6e3a1\">{}</span>", toast));
                 }
                 Err(e) => {
-                    lbl.set_markup(&format!("<span foreground=\"#f38ba8\">✖ Fout bij opslaan: {}</span>", e));
+                    lbl.set_markup(&format!("<span foreground=\"#f38ba8\">Fout bij opslaan: {}</span>", e));
                 }
             }
         });

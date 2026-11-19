@@ -127,21 +127,21 @@ fn rebuild_canvas(
         let info = all.iter().find(|m| m.id == id);
         match info {
             Some(m) => zl.append(&build_chip(pl, m)),
-            None => zl.append(&build_chip(pl, &ModuleInfo { id: id.clone(), name: id.clone(), icon: "🧩".to_string(), description: String::new(), is_custom: false })),
+            None => zl.append(&build_chip(pl, &ModuleInfo { id: id.clone(), name: id.clone(), icon: "\u{f03d7}".to_string(), description: String::new(), is_custom: false })),
         }
     }
     for id in center_ids {
         let info = all.iter().find(|m| m.id == id);
         match info {
             Some(m) => zc.append(&build_chip(pl, m)),
-            None => zc.append(&build_chip(pl, &ModuleInfo { id: id.clone(), name: id.clone(), icon: "🧩".to_string(), description: String::new(), is_custom: false })),
+            None => zc.append(&build_chip(pl, &ModuleInfo { id: id.clone(), name: id.clone(), icon: "\u{f03d7}".to_string(), description: String::new(), is_custom: false })),
         }
     }
     for id in right_ids {
         let info = all.iter().find(|m| m.id == id);
         match info {
             Some(m) => zr.append(&build_chip(pl, m)),
-            None => zr.append(&build_chip(pl, &ModuleInfo { id: id.clone(), name: id.clone(), icon: "🧩".to_string(), description: String::new(), is_custom: false })),
+            None => zr.append(&build_chip(pl, &ModuleInfo { id: id.clone(), name: id.clone(), icon: "\u{f03d7}".to_string(), description: String::new(), is_custom: false })),
         }
     }
 }

@@ -285,7 +285,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
     row_name.add_suffix(&entry_card_name);
     group_custom_card.add(&row_name);
 
-    let entry_card_icon = Entry::builder().placeholder_text("Emoji (bijv. 🌡️ of 🛡️)").width_chars(10).build();
+    let entry_card_icon = Entry::builder().placeholder_text("Icoon (leeg = standaard)").width_chars(10).build();
     let row_icon = ActionRow::builder().title("Icoon").build();
     row_icon.add_suffix(&entry_card_icon);
     group_custom_card.add(&row_icon);
@@ -327,7 +327,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
             let cmd = e_cmd.text().trim().to_string();
             if name.is_empty() || cmd.is_empty() { return; }
 
-            let icon = if e_ico.text().trim().is_empty() { "💻".to_string() } else { e_ico.text().trim().to_string() };
+            let icon = e_ico.text().trim().to_string();
             let interval = s_int.value().round() as u32;
             let click = if e_clk.text().trim().is_empty() { None } else { Some(e_clk.text().trim().to_string()) };
 
@@ -378,7 +378,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
         .title("Map met Kaarten Openen")
         .subtitle("Locatie: ~/.config/quickshell/cards/")
         .build();
-    let btn_open_cards = Button::builder().label("📂 Map Openen").valign(gtk4::Align::Center).build();
+    let btn_open_cards = Button::builder().label("Map Openen").valign(gtk4::Align::Center).build();
     btn_open_cards.connect_clicked(|_| {
         if let Ok(home) = std::env::var("HOME") {
             let dir = format!("{}/.config/quickshell/cards", home);
@@ -393,7 +393,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
         .title("Nieuwe Kaart Template Maken")
         .subtitle("Genereer CustomCard.qml en open in teksteditor")
         .build();
-    let btn_tmpl = Button::builder().label("✨ Maak Template").valign(gtk4::Align::Center).build();
+    let btn_tmpl = Button::builder().label("Maak Template").valign(gtk4::Align::Center).build();
     {
         let refresh_list = Rc::clone(&refresh_cards_list);
         btn_tmpl.connect_clicked(move |_| {
@@ -402,6 +402,7 @@ pub fn build_control_center_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Transl
                 if !std::path::Path::new(&file_path).exists() {
                     let tmpl = r###"import QtQuick
 import QtQuick.Layouts
+import "../components"
 
 Rectangle {
     Layout.fillWidth: true
@@ -416,7 +417,7 @@ Rectangle {
         anchors.margins: 12
         spacing: 10
 
-        Text { text: "🚀"; font.pixelSize: 18 }
+        ZIcon { name: "custom"; color: "#89b4fa"; size: 22 }
         ColumnLayout {
             Text { text: "Mijn Aangepaste Kaart"; font.bold: true; color: "#cdd6f4"; font.pixelSize: 12 }
             Text { text: "Gebouwd met Quickshell & QML"; color: "#a6adc8"; font.pixelSize: 10 }
@@ -438,7 +439,7 @@ Rectangle {
         .title("Test Toggle Control Center")
         .subtitle("Simuleer een sneltoetsaanroep via Quickshell IPC")
         .build();
-    let btn_test_ipc = Button::builder().label("🚀 Toggle Nu").valign(gtk4::Align::Center).build();
+    let btn_test_ipc = Button::builder().label("Toggle Nu").valign(gtk4::Align::Center).build();
     btn_test_ipc.connect_clicked(|_| {
         let _ = std::process::Command::new("quickshell")
             .args(["ipc", "call", "controlCenter", "toggle"])
@@ -474,7 +475,7 @@ fn refresh_cards_ui(list_box: &ListBox, shell_state: &Rc<RefCell<ZenithShellConf
         let info = all_cards.iter().find(|c| &c.id == card_id);
         let title = match info {
             Some(i) => format!("{} {}", i.icon, i.name),
-            None => format!("🎴 {}", card_id),
+            None => card_id.to_string(),
         };
         let desc = match info {
             Some(i) => i.description.clone(),
@@ -520,8 +521,8 @@ fn refresh_cards_ui(list_box: &ListBox, shell_state: &Rc<RefCell<ZenithShellConf
             row.add_suffix(&btn_down);
         }
 
-        // Knop Verwijderen (✖)
-        let btn_remove = Button::builder().label("✖").valign(gtk4::Align::Center).tooltip_text("Van paneel verwijderen").build();
+        // Knop Verwijderen
+        let btn_remove = Button::builder().icon_name("window-close-symbolic").valign(gtk4::Align::Center).tooltip_text("Van paneel verwijderen").build();
         btn_remove.add_css_class("destructive-action");
         {
             let sh_st = Rc::clone(shell_state);

@@ -64,7 +64,7 @@ impl Default for ToolHubItem {
             packages: Vec::new(),
             flatpak_ids: Vec::new(),
             check_binary: String::new(),
-            icon: "🧩".to_string(),
+            icon: "\u{f03d7}".to_string(),
         }
     }
 }
@@ -90,7 +90,7 @@ fn builtin_catalog() -> Vec<ToolHubItem> {
             packages: vec!["neovim".to_string(), "git".to_string(), "ripgrep".to_string(), "fd".to_string()],
             flatpak_ids: Vec::new(),
             check_binary: "nvim".to_string(),
-            icon: "💻".to_string(),
+            icon: "\u{f018d}".to_string(),
         },
         ToolHubItem {
             key: "wireshark".to_string(),
@@ -99,7 +99,7 @@ fn builtin_catalog() -> Vec<ToolHubItem> {
             packages: vec!["wireshark".to_string(), "tshark".to_string()],
             flatpak_ids: vec!["org.wireshark.Wireshark".to_string()],
             check_binary: "wireshark".to_string(),
-            icon: "🕵️".to_string(),
+            icon: "\u{f0349}".to_string(),
         },
     ]
 }

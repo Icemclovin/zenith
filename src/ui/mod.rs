@@ -1,5 +1,6 @@
 pub mod backup_designer;
 pub mod control_center_designer;
+pub mod desktop_widgets_designer;
 pub mod drag_canvas;
 pub mod escape;
 pub mod fastfetch_designer;

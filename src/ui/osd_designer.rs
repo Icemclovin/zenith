@@ -303,10 +303,10 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> 
         .title("Test Geluidsvolume OSD")
         .subtitle("Triggert direct een volume-overlay op het scherm")
         .build();
-    let btn_test_vol = Button::builder().label("🔊 Test Volume").valign(gtk4::Align::Center).build();
+    let btn_test_vol = Button::builder().label("Test Volume").valign(gtk4::Align::Center).build();
     btn_test_vol.connect_clicked(|_| {
         let _ = std::process::Command::new("quickshell")
-            .args(["ipc", "call", "osd", "popup", "🔊", "75%", "0.75"])
+            .args(["ipc", "call", "osd", "popup", "volume_high", "75%", "0.75"])
             .spawn();
     });
     row_test_vol.add_suffix(&btn_test_vol);
@@ -316,10 +316,10 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> 
         .title("Test Schermhelderheid OSD")
         .subtitle("Triggert direct een helderheids-overlay op het scherm")
         .build();
-    let btn_test_br = Button::builder().label("☀️ Test Helderheid").valign(gtk4::Align::Center).build();
+    let btn_test_br = Button::builder().label("Test Helderheid").valign(gtk4::Align::Center).build();
     btn_test_br.connect_clicked(|_| {
         let _ = std::process::Command::new("quickshell")
-            .args(["ipc", "call", "osd", "popup", "☀️", "60%", "0.60"])
+            .args(["ipc", "call", "osd", "popup", "brightness", "60%", "0.60"])
             .spawn();
     });
     row_test_br.add_suffix(&btn_test_br);
@@ -329,10 +329,10 @@ pub fn build_osd_page(_state: &Rc<RefCell<ZenithConfig>>, tr: &Translations) -> 
         .title("Test Microfoon OSD")
         .subtitle("Triggert direct een microfoon-overlay op het scherm")
         .build();
-    let btn_test_mic = Button::builder().label("🎙️ Test Microfoon").valign(gtk4::Align::Center).build();
+    let btn_test_mic = Button::builder().label("Test Microfoon").valign(gtk4::Align::Center).build();
     btn_test_mic.connect_clicked(|_| {
         let _ = std::process::Command::new("quickshell")
-            .args(["ipc", "call", "osd", "popup", "🎙️", "80%", "0.80"])
+            .args(["ipc", "call", "osd", "popup", "mic", "80%", "0.80"])
             .spawn();
     });
     row_test_mic.add_suffix(&btn_test_mic);

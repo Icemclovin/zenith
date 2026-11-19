@@ -161,7 +161,7 @@ pub fn build_backup_page(tr: &Translations) -> PreferencesPage {
 
                 // Verwijder-knop
                 let btn_del = Button::builder()
-                    .label("🗑")
+                    .icon_name("user-trash-symbolic")
                     .valign(gtk4::Align::Center)
                     .tooltip_text(delete_tip_msg.as_str())
                     .build();

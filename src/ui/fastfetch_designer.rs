@@ -85,7 +85,7 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
         .build();
 
     let btn_refresh = Button::builder()
-        .label(format!("🔄 {}", tr.ff_refresh_preview))
+        .label(tr.ff_refresh_preview.as_str())
         .valign(Align::Center)
         .build();
 
@@ -186,7 +186,7 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
         .build();
 
     let btn_browse_logo = Button::builder()
-        .label("📁 Blader")
+        .label("Blader")
         .valign(Align::Center)
         .build();
 
@@ -366,7 +366,7 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
         .subtitle("Pas de actieve Zenith accentkleuren automatisch toe op Fastfetch")
         .build();
     let btn_sync_theme = Button::builder()
-        .label("🎨 Thema Synchroniseren")
+        .label("Thema Synchroniseren")
         .valign(Align::Center)
         .build();
 
@@ -488,7 +488,7 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
                 row.add_suffix(&btn_down);
             }
 
-            let btn_del = Button::builder().label("✖").valign(Align::Center).tooltip_text("Verwijderen").build();
+            let btn_del = Button::builder().icon_name("user-trash-symbolic").valign(Align::Center).tooltip_text("Verwijderen").build();
             btn_del.add_css_class("destructive-action");
             {
                 let st_c = Rc::clone(st);
@@ -639,7 +639,7 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
         .build();
 
     let btn_save = Button::builder()
-        .label(format!("💾 {}", tr.ff_save))
+        .label(tr.ff_save.as_str())
         .valign(Align::Center)
         .build();
     btn_save.add_css_class("suggested-action");
@@ -665,10 +665,10 @@ pub fn build_fastfetch_page(tr: &Translations) -> PreferencesPage {
             let st = ff_st.borrow();
             match st.save() {
                 Ok(_) => {
-                    lbl_status.set_markup(&format!("<span foreground=\"#a6e3a1\">✔ {}</span>", toast_msg));
+                    lbl_status.set_markup(&format!("<span foreground=\"#a6e3a1\">{}</span>", toast_msg));
                 }
                 Err(e) => {
-                    lbl_status.set_markup(&format!("<span foreground=\"#f38ba8\">✖ Fout bij opslaan: {}</span>", e));
+                    lbl_status.set_markup(&format!("<span foreground=\"#f38ba8\">Fout bij opslaan: {}</span>", e));
                 }
             }
         });
